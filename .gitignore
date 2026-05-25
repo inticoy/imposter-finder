@@ -1,0 +1,4 @@
+.env
+players.json
+__pycache__/
+*.pyc

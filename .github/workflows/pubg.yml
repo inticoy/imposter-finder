@@ -1,0 +1,84 @@
+name: PUBG Imposter Finder
+
+on:
+  workflow_dispatch:
+    inputs:
+      bot_env:
+        description: "Discord target environment"
+        required: true
+        default: "dev"
+        type: choice
+        options:
+          - dev
+          - prod
+      send_discord:
+        description: "Send reports to Discord"
+        required: true
+        default: true
+        type: boolean
+      include_seen:
+        description: "Re-analyze already seen matches"
+        required: true
+        default: false
+        type: boolean
+  schedule:
+    - cron: "*/10 * * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pubg-imposter-finder
+  cancel-in-progress: false
+
+jobs:
+  pubg:
+    runs-on: ubuntu-latest
+    env:
+      BOT_ENV: ${{ github.event_name == 'workflow_dispatch' && inputs.bot_env || 'prod' }}
+      PUBG_API_KEY: ${{ secrets.PUBG_API_KEY }}
+      DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+      DISCORD_CHANNEL_DEV: ${{ secrets.DISCORD_CHANNEL_DEV }}
+      DISCORD_CHANNEL_PROD: ${{ secrets.DISCORD_CHANNEL_PROD }}
+      DISCORD_THREAD_DEV: ${{ secrets.DISCORD_THREAD_DEV }}
+      DISCORD_THREAD_PROD: ${{ secrets.DISCORD_THREAD_PROD }}
+      SEND_DISCORD: ${{ github.event_name == 'schedule' && 'true' || inputs.send_discord }}
+      INCLUDE_SEEN: ${{ github.event_name == 'workflow_dispatch' && inputs.include_seen || 'false' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Write players.json from secret
+        env:
+          PLAYERS_JSON: ${{ secrets.PLAYERS_JSON }}
+        run: |
+          test -n "$PLAYERS_JSON"
+          printf '%s\n' "$PLAYERS_JSON" > players.json
+
+      - name: Run PUBG imposter finder
+        run: |
+          args=(pubg --max-matches 3)
+          if [ "$SEND_DISCORD" = "true" ]; then
+            args+=(--send-discord)
+          fi
+          if [ "$INCLUDE_SEEN" = "true" ]; then
+            args+=(--include-seen)
+          fi
+          python -B -m imposter_finder "${args[@]}"
+
+      - name: Commit seen matches
+        run: |
+          if [ -z "$(git status --porcelain -- data/seen_matches.json)" ]; then
+            echo "No seen match changes."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/seen_matches.json
+          git commit -m "Update seen PUBG matches"
+          git pull --rebase
+          git push

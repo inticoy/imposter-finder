@@ -1,0 +1,36 @@
+{
+  "players": [
+    {
+      "name": "준호",
+      "discord_user_id": "123456789012345678",
+      "accounts": {
+        "pubg": {
+          "platform": "steam",
+          "nickname": "PubgNickA"
+        },
+        "fconline": {
+          "nickname": "FcOwnerNickA"
+        },
+        "lol": {
+          "riot_id": "GameNameA#KR1"
+        }
+      }
+    },
+    {
+      "name": "민수",
+      "discord_user_id": "234567890123456789",
+      "accounts": {
+        "pubg": {
+          "platform": "kakao",
+          "nickname": "PubgNickB"
+        },
+        "fconline": {
+          "nickname": "FcOwnerNickB"
+        },
+        "lol": {
+          "riot_id": "GameNameB#TAG"
+        }
+      }
+    }
+  ]
+}
