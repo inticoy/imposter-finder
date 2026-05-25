@@ -37,6 +37,7 @@ jobs:
     env:
       BOT_ENV: ${{ github.event_name == 'workflow_dispatch' && inputs.bot_env || 'prod' }}
       PUBG_API_KEY: ${{ secrets.PUBG_API_KEY }}
+      PUBG_MAX_MATCH_AGE_HOURS: ${{ vars.PUBG_MAX_MATCH_AGE_HOURS || '12' }}
       DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
       DISCORD_CHANNEL_DEV: ${{ secrets.DISCORD_CHANNEL_DEV }}
       DISCORD_CHANNEL_PROD: ${{ secrets.DISCORD_CHANNEL_PROD }}

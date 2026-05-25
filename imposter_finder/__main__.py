@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 from collections import defaultdict
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from imposter_finder.analysis.pubg import analyze_pubg_match, pubg_match_label
@@ -24,6 +25,7 @@ def main() -> int:
     pubg.add_argument("--list-matches", action="store_true", help="List candidate matches and exit")
     pubg.add_argument("--match-index", type=int, help="Analyze one candidate by zero-based index after sorting")
     pubg.add_argument("--match-id", help="Analyze a specific PUBG match id")
+    pubg.add_argument("--ignore-age-limit", action="store_true", help="Include matches older than PUBG_MAX_MATCH_AGE_HOURS")
 
     args = parser.parse_args()
     if args.command == "pubg":
@@ -35,6 +37,7 @@ def main() -> int:
             list_matches=args.list_matches,
             match_index=args.match_index,
             match_id=args.match_id,
+            ignore_age_limit=args.ignore_age_limit,
         )
     return 1
 
@@ -47,6 +50,7 @@ def run_pubg(
     list_matches: bool,
     match_index: int | None,
     match_id: str | None,
+    ignore_age_limit: bool,
 ) -> int:
     settings = load_settings()
     players = load_pubg_players(settings.players_path)
@@ -61,7 +65,13 @@ def run_pubg(
             )
         discord = DiscordClient(settings.discord_bot_token)
 
-    matches = discover_pubg_matches(client, state, players, include_seen=include_seen)
+    matches = discover_pubg_matches(
+        client,
+        state,
+        players,
+        include_seen=include_seen,
+        max_match_age_hours=None if ignore_age_limit else settings.pubg_max_match_age_hours,
+    )
     candidates = [m for m in matches if include_seen or not state.seen_match("pubg", m["platform"], m["match_id"])]
     candidates = sorted(candidates, key=lambda item: item.get("created_at") or "", reverse=True)
 
@@ -129,6 +139,7 @@ def discover_pubg_matches(
     state: JsonState,
     players: list[PubgPlayer],
     include_seen: bool,
+    max_match_age_hours: float | None,
 ) -> list[dict[str, Any]]:
     players_by_platform: dict[str, list[PubgPlayer]] = defaultdict(list)
     for player in players:
@@ -149,9 +160,13 @@ def discover_pubg_matches(
                 key = (platform, match_id)
                 if key in discovered:
                     continue
+                discovered[key] = None
                 if state.seen_match("pubg", platform, match_id):
                     if include_seen:
                         match = client.get_match(platform, match_id)
+                        if is_match_too_old(match, max_match_age_hours):
+                            print(f"SKIP: match older than {max_match_age_hours:g}h for match {match_id}")
+                            continue
                         registered_count = count_registered_pubg_players(match, platform_players)
                         if registered_count < 2:
                             print(f"SKIP: registered PUBG players < 2 for match {match_id} ({registered_count})")
@@ -166,6 +181,9 @@ def discover_pubg_matches(
                         }
                     continue
                 match = client.get_match(platform, match_id)
+                if is_match_too_old(match, max_match_age_hours):
+                    print(f"SKIP: match older than {max_match_age_hours:g}h for match {match_id}")
+                    continue
                 registered_count = count_registered_pubg_players(match, platform_players)
                 if registered_count < 2:
                     print(f"SKIP: registered PUBG players < 2 for match {match_id} ({registered_count})")
@@ -179,7 +197,20 @@ def discover_pubg_matches(
                     "seen": False,
                 }
 
-    return list(discovered.values())
+    return [item for item in discovered.values() if item is not None]
+
+
+def is_match_too_old(match: dict[str, Any], max_match_age_hours: float | None) -> bool:
+    if max_match_age_hours is None:
+        return False
+    created_at = match.get("data", {}).get("attributes", {}).get("createdAt")
+    if not created_at:
+        return False
+    try:
+        started = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return datetime.now(timezone.utc) - started > timedelta(hours=max_match_age_hours)
 
 
 def count_registered_pubg_players(match: dict[str, Any], players: list[PubgPlayer]) -> int:

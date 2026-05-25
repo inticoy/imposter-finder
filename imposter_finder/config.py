@@ -31,6 +31,7 @@ def env(name: str, default: str | None = None) -> str | None:
 class Settings:
     bot_env: str
     pubg_api_key: str
+    pubg_max_match_age_hours: float
     seen_matches_path: Path
     players_path: Path
     discord_bot_token: str | None = None
@@ -47,6 +48,7 @@ def load_settings() -> Settings:
     pubg_api_key = env("PUBG_API_KEY")
     if not pubg_api_key:
         raise RuntimeError("PUBG_API_KEY is required in .env")
+    pubg_max_match_age_hours = float(env("PUBG_MAX_MATCH_AGE_HOURS", "12"))
 
     channel_id = env("DISCORD_CHANNEL_ID") or env(f"DISCORD_CHANNEL_{bot_env.upper()}")
     thread_id = env("DISCORD_THREAD_ID") or env(f"DISCORD_THREAD_{bot_env.upper()}")
@@ -54,6 +56,7 @@ def load_settings() -> Settings:
     return Settings(
         bot_env=bot_env,
         pubg_api_key=pubg_api_key,
+        pubg_max_match_age_hours=pubg_max_match_age_hours,
         seen_matches_path=ROOT_DIR / "data" / "seen_matches.json",
         players_path=ROOT_DIR / "players.json",
         discord_bot_token=env("DISCORD_BOT_TOKEN"),

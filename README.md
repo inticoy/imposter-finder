@@ -63,11 +63,12 @@ python3 -m imposter_finder pubg --include-seen
 처리한 match id는 `data/seen_matches.json`에 저장됩니다. GitHub Actions에서 실행한 뒤 이 파일을 커밋하면 다음 실행에서 같은 매치를 건너뛸 수 있습니다.
 
 분석 대상은 `players.json`에 등록된 친구가 2명 이상 참여한 PUBG 매치로 제한됩니다.
+기본적으로 최근 12시간 이내 매치만 새 알림 후보로 봅니다. `PUBG_MAX_MATCH_AGE_HOURS`로 조정할 수 있습니다.
 
 Discord 전송까지 테스트하려면:
 
 ```bash
-BOT_ENV=dev python3 -B -m imposter_finder pubg --include-seen --max-matches 1 --send-discord --no-save-state
+BOT_ENV=dev python3 -B -m imposter_finder pubg --include-seen --ignore-age-limit --max-matches 1 --send-discord --no-save-state
 ```
 
 Discord 메시지는 embed 형식으로 전송되며, 포럼 채널에서는 매치별 thread가 생성됩니다.
