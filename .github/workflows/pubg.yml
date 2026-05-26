@@ -6,7 +6,7 @@ on:
       bot_env:
         description: "Discord target environment"
         required: true
-        default: "dev"
+        default: "prod"
         type: choice
         options:
           - dev
@@ -41,7 +41,7 @@ jobs:
       DISCORD_CHANNEL_PROD: ${{ secrets.DISCORD_CHANNEL_PROD }}
       DISCORD_THREAD_DEV: ${{ secrets.DISCORD_THREAD_DEV }}
       DISCORD_THREAD_PROD: ${{ secrets.DISCORD_THREAD_PROD }}
-      SEND_DISCORD: ${{ github.event_name == 'schedule' && 'true' || inputs.send_discord }}
+      SEND_DISCORD: ${{ inputs.send_discord }}
       INCLUDE_SEEN: ${{ github.event_name == 'workflow_dispatch' && inputs.include_seen || 'false' }}
 
     steps:
