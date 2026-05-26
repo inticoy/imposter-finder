@@ -1,4 +1,12 @@
 {
   "version": 1,
-  "seen_matches": []
+  "seen_matches": [
+    {
+      "game": "pubg",
+      "platform": "steam",
+      "match_id": "7b8dd82e-c26c-4823-8918-0d14ae37cf93",
+      "started_at": "2026-05-26T15:33:14Z",
+      "processed_at": "2026-05-26T16:00:35.233109+00:00"
+    }
+  ]
 }
