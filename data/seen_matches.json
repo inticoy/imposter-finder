@@ -56,6 +56,13 @@
       "match_id": "6003023e-ae16-4b57-b2e4-d91606ad80ef",
       "started_at": "2026-06-05T13:05:44Z",
       "processed_at": "2026-06-05T14:00:37.944291+00:00"
+    },
+    {
+      "game": "pubg",
+      "platform": "steam",
+      "match_id": "bd694190-ca58-464a-83d7-aa35900b9e25",
+      "started_at": "2026-06-07T14:59:04Z",
+      "processed_at": "2026-06-07T15:30:24.867506+00:00"
     }
   ]
 }
