@@ -175,6 +175,13 @@
       "match_id": "06ecf47c-3c5c-48af-8cb8-6a5e09029601",
       "started_at": "2026-07-11T15:45:35Z",
       "processed_at": "2026-07-11T16:30:59.147480+00:00"
+    },
+    {
+      "game": "pubg",
+      "platform": "steam",
+      "match_id": "64630c4e-4c59-44c2-aa5a-4de75ce0db7c",
+      "started_at": "2026-07-11T16:40:17Z",
+      "processed_at": "2026-07-11T17:31:06.722687+00:00"
     }
   ]
 }
