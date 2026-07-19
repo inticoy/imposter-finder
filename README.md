@@ -10,6 +10,7 @@
 - [docs/implementation-plan.md](docs/implementation-plan.md): 검증 이후 구현 계획
 - [docs/player-registry.md](docs/player-registry.md): 친구별 Discord ID와 게임 닉네임 매핑 방식
 - [docs/github-actions.md](docs/github-actions.md): GitHub Actions dev/prod 실행과 로컬 테스트 방법
+- [docs/interactive-bot-design.md](docs/interactive-bot-design.md): @멘션 전적 조회(대화형) 봇 설계와 무료 호스팅 검토
 
 ## 친구 계정 등록
 
