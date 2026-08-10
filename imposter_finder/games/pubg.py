@@ -52,6 +52,19 @@ class PubgClient:
         url = f"https://api.pubg.com/shards/{platform}/matches/{match_id}"
         return self._request_json(url, self._headers(auth=False))
 
+    def get_recent_match_ids(self, platform: str, nickname: str, limit: int = 30) -> list[str]:
+        """Return the match ids currently exposed on a player's PUBG profile.
+
+        PUBG controls how much history is returned by this relationship.  Callers
+        must therefore treat ``limit`` as a maximum, rather than promising that
+        exactly that many matches are available.
+        """
+        player = self.lookup_players(platform, [nickname]).get(nickname.lower())
+        if not player:
+            raise PubgApiError(f"PUBG player not found: {nickname} ({platform})")
+        matches = player.get("relationships", {}).get("matches", {}).get("data", [])
+        return [item["id"] for item in matches[:limit] if item.get("id")]
+
     def get_telemetry(self, url: str) -> list[dict[str, Any]]:
         payload = self._request_json(url, headers={})
         return payload if isinstance(payload, list) else []

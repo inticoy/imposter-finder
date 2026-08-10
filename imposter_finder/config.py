@@ -37,6 +37,10 @@ class Settings:
     discord_bot_token: str | None = None
     discord_channel_id: str | None = None
     discord_thread_id: str | None = None
+    discord_guild_id: str | None = None
+    local_database_path: Path = ROOT_DIR / "data" / "imposter_finder.db"
+    pubg_poll_interval_minutes: float = 15.0
+    healthcheck_imposter_finder_url: str | None = None
 
 
 def load_settings() -> Settings:
@@ -62,4 +66,8 @@ def load_settings() -> Settings:
         discord_bot_token=env("DISCORD_BOT_TOKEN"),
         discord_channel_id=channel_id,
         discord_thread_id=thread_id,
+        discord_guild_id=env("DISCORD_GUILD_ID"),
+        local_database_path=ROOT_DIR / env("LOCAL_DATABASE_PATH", "data/imposter_finder.db"),
+        pubg_poll_interval_minutes=float(env("PUBG_POLL_INTERVAL_MINUTES", "15")),
+        healthcheck_imposter_finder_url=env("HEALTHCHECK_IMPOSTER_FINDER_URL"),
     )

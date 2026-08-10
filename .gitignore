@@ -1,4 +1,7 @@
 .env
+.venv/
+data/imposter_finder.db*
+data/imposter-finder*.log
 players.json
 __pycache__/
 *.pyc

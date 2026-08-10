@@ -26,6 +26,8 @@ def main() -> int:
     pubg.add_argument("--match-index", type=int, help="Analyze one candidate by zero-based index after sorting")
     pubg.add_argument("--match-id", help="Analyze a specific PUBG match id")
     pubg.add_argument("--ignore-age-limit", action="store_true", help="Include matches older than PUBG_MAX_MATCH_AGE_HOURS")
+    subparsers.add_parser("bot", help="Run the local Discord slash-command bot")
+    subparsers.add_parser("serve", help="Run the local Discord bot and 15-minute PUBG collector")
 
     args = parser.parse_args()
     if args.command == "pubg":
@@ -39,6 +41,16 @@ def main() -> int:
             match_id=args.match_id,
             ignore_age_limit=args.ignore_age_limit,
         )
+    if args.command == "bot":
+        from imposter_finder.bot import run_discord_bot
+
+        run_discord_bot(load_settings())
+        return 0
+    if args.command == "serve":
+        from imposter_finder.bot import run_discord_bot
+
+        run_discord_bot(load_settings(), serve=True)
+        return 0
     return 1
 
 
