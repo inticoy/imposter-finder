@@ -132,7 +132,10 @@ def _load_report(client: PubgClient, player: PubgPlayer, match_count: int, store
 
 async def _collection_loop(settings: Settings, store: LocalStore) -> None:
     """Bootstrap quietly, then publish new group matches every configured interval."""
-    first_cycle = True
+    # Only a brand-new database needs a quiet import. On a restart, existing
+    # history means any unprocessed recent match occurred while we were away
+    # and should still receive its normal report.
+    first_cycle = not store.has_matches()
     while True:
         try:
             result = await asyncio.to_thread(run_collection_cycle, settings, store, not first_cycle)

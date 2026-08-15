@@ -102,7 +102,7 @@ GitHub Actions 대신 맥에서 Discord 명령과 15분 PUBG 수집을 함께 �
 python3 -m imposter_finder serve
 ```
 
-`serve`는 처음 실행할 때 기존 매치를 SQLite(`data/imposter_finder.db`)에 조용히 적재하고, 이후 `PUBG_POLL_INTERVAL_MINUTES`(기본 15분)마다 새 매치를 확인해 범인찾기 게시판으로 보냅니다. `/user`는 누적된 로컬 이력을 우선 사용하며 부족할 때만 PUBG API에서 최신 정보를 보충합니다.
+`serve`는 **새 SQLite 데이터베이스로 처음 실행할 때만** 기존 매치를 조용히 적재하고, 이후 `PUBG_POLL_INTERVAL_MINUTES`(기본 15분)마다 새 매치를 확인해 범인찾기 게시판으로 보냅니다. 재부팅 뒤에는 서비스가 멈춰 있던 동안 발생한 새 매치도 정상 분석 대상으로 처리합니다. `/user`는 누적된 로컬 이력을 우선 사용하며 부족할 때만 PUBG API에서 최신 정보를 보충합니다.
 
 ```env
 PUBG_POLL_INTERVAL_MINUTES=15

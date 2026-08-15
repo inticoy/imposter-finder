@@ -94,6 +94,11 @@ class LocalStore:
                 "SELECT 1 FROM match_notifications WHERE platform = ? AND match_id = ?", (platform, match_id)
             ).fetchone() is not None
 
+    def has_matches(self) -> bool:
+        """Whether this local service has completed an initial history import."""
+        with self._lock:
+            return self._connection.execute("SELECT 1 FROM matches LIMIT 1").fetchone() is not None
+
     def mark_notification_done(self, platform: str, match_id: str, outcome: str) -> None:
         with self._lock:
             self._connection.execute(
