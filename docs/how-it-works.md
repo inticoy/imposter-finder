@@ -8,7 +8,8 @@
 launchd (KeepAlive)
   └─ python -m imposter_finder serve        상주 프로세스 1개
        ├─ Discord 봇 (bot.py)               /user 슬래시 명령
-       └─ 15분 수집 루프 (collector.py)       새 그룹 매치 → 범인찾기 리포트
+       ├─ 15분 수집 루프 (collector.py)       새 그룹 매치 → 범인찾기 리포트
+       └─ 15분 FC 루프 (fc_collector.py)      새 친구전 → FC 리포트
             ├─ games/pubg.py                PUBG API (매치·텔레메트리)
             ├─ analysis/pubg.py             매치별 범인 판정
             ├─ storage.py                   SQLite data/imposter_finder.db
@@ -28,6 +29,26 @@ launchd (KeepAlive)
 
 **첫 실행과 재시작:** DB가 비어 있으면 첫 수집은 리포트 없이 기록만 합니다(지난 매치가 한꺼번에 가지 않게). DB가 있으면 꺼져 있던 동안의 최근 매치도 정상적으로 리포트합니다.
 
+## FC 온라인 친구전 리포트
+
+1. 15분마다 `players.json`에 FC 닉네임이 있는 친구마다 **클래식 1on1(40)** 최근 20경기 목록을 받습니다.
+2. 두 명 이상의 목록에 같은 경기 ID가 있으면 친구전입니다. 상세를 받아 `fc_matches`에 쌓습니다.
+3. 새 친구전(24시간 이내)은 FC thread(BETA·REAL)에 **조용히(@silent)** 두 사람을 태그해 보냅니다.
+
+| 카드 | 내용 |
+|---|---|
+| 스코어 | 이긴 쪽 왼쪽 + 👑, 닉네임 |
+| 맞대결 | DB 기준 최근 10경기, 앞서는 사람 기준 "N승 N무 N패 · 득실" |
+| MVP | 평점 최고 선수 (이미지 썸네일), 시즌, 강화 배지(🥉+2~4 🥈+5~7 🥇+8~10 💎+11~13), ⚽🅰️🟨🟥 |
+| 범인 | **선발** 중 평점 최저 선수 (교체 출전은 제외) |
+| 그래프 | 점유율·슈팅·유효슈팅·패스 성공률·스루패스·드리블·태클·평균 평점을 두 사람 비율 막대로 (Pillow) |
+| 평가 | Gemini가 두 사람 각각 "○○는 …했습니다." 한 문장. 실패하면 생략 |
+
+- **몰수 경기**(`matchEndType` 1·2, 중도 이탈)는 스탯이 비어 있어 "👑 ○○ 몰수승 · ○○ 중도 이탈"만 보냅니다.
+- **첫 실행**은 넥슨이 보여주는 친구전(약 30일치)을 리포트 없이 저장만 합니다. 2026-10-09에 124경기(9/10~10/8)를 받았습니다.
+- **API 한도:** 호출 수를 `api_usage`에 세서 하루 900회(`NEXON_DAILY_LIMIT`)를 넘으면 그날은 멈춥니다. 평소 15분마다 친구 5명 목록 = 하루 약 480회 + 새 경기 상세.
+- 메타데이터(선수 이름·시즌)는 `data/fc_meta/`에 하루 한 번 받아 둡니다. 선수 이미지는 시즌 이미지가 없으면 기본 이미지를 씁니다.
+
 ## `/user` 전적 감정서
 
 `/user 이름 [판수]` (기본 30판, 5~100) — 이름은 자동완성됩니다.
@@ -44,7 +65,7 @@ launchd (KeepAlive)
 | 실행 | launchd `com.inticoy.imposter-finder`, Python 3.14 (`.venv`) |
 | 로그 | `logs/imposter-finder.log` (수집 결과), `logs/imposter-finder-error.log` (봇) |
 | 감시 | 수집 주기마다 `HEALTHCHECK_IMPOSTER_FINDER_URL` 핑, 실패 시 `/fail` (period 15분, grace 10분) |
-| 데이터 | `data/imposter_finder.db` (커밋 안 함), `players.json` (커밋 안 함) |
+| 데이터 | `data/imposter_finder.db` (PUBG·FC 경기, 커밋 안 함), `players.json` (커밋 안 함), `data/fc_meta/` |
 
 - 인터넷이 끊긴 채로 시작하면 Discord 로그인에 실패해 종료되고, launchd가 10초 뒤 다시 띄웁니다.
 - `pubg` 명령(`--list-matches` 등)은 디버깅용입니다. 이 경로는 예전 GitHub Actions용 `data/seen_matches.json`을 상태로 씁니다.

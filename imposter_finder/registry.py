@@ -38,3 +38,24 @@ def load_pubg_players(path: Path) -> list[PubgPlayer]:
     if not players:
         raise RuntimeError("No PUBG players found in players.json")
     return players
+
+
+@dataclass(frozen=True)
+class FcPlayer:
+    name: str
+    discord_user_id: str | None
+    nickname: str
+
+
+def load_fc_players(path: Path) -> list[FcPlayer]:
+    """FC 온라인 닉네임이 등록된 친구만. 없으면 빈 목록."""
+    if not path.exists():
+        return []
+    with path.open("r", encoding="utf-8") as f:
+        registry = json.load(f)
+    return [
+        FcPlayer(name=player["name"], discord_user_id=player.get("discord_user_id"),
+                 nickname=player["accounts"]["fconline"]["nickname"])
+        for player in registry.get("players", [])
+        if player.get("accounts", {}).get("fconline", {}).get("nickname")
+    ]

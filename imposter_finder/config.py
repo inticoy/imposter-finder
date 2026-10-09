@@ -41,6 +41,13 @@ class Settings:
     local_database_path: Path = ROOT_DIR / "data" / "imposter_finder.db"
     pubg_poll_interval_minutes: float = 15.0
     healthcheck_imposter_finder_url: str | None = None
+    nexon_api_key: str | None = None
+    nexon_daily_limit: int = 900
+    gemini_api_key: str | None = None
+    gemini_model: str = "gemini-3.5-flash-lite"
+    # FC 리포트는 BETA·REAL thread에 함께 보낸다
+    discord_fc_thread_ids: tuple[str, ...] = ()
+    fc_poll_interval_minutes: float = 15.0
 
 
 def load_settings() -> Settings:
@@ -70,4 +77,12 @@ def load_settings() -> Settings:
         local_database_path=ROOT_DIR / env("LOCAL_DATABASE_PATH", "data/imposter_finder.db"),
         pubg_poll_interval_minutes=float(env("PUBG_POLL_INTERVAL_MINUTES", "15")),
         healthcheck_imposter_finder_url=env("HEALTHCHECK_IMPOSTER_FINDER_URL"),
+        nexon_api_key=env("NEXON_API_KEY"),
+        nexon_daily_limit=int(env("NEXON_DAILY_LIMIT", "900")),
+        gemini_api_key=env("GEMINI_API_KEY"),
+        gemini_model=env("GEMINI_MODEL", "gemini-3.5-flash-lite"),
+        discord_fc_thread_ids=tuple(
+            thread for thread in (env("DISCORD_THREAD_FC_DEV"), env("DISCORD_THREAD_FC_PROD")) if thread
+        ),
+        fc_poll_interval_minutes=float(env("FC_POLL_INTERVAL_MINUTES", "15")),
     )

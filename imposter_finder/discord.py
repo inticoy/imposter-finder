@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import urllib.error
 import urllib.request
+import uuid
 
 
 class DiscordError(RuntimeError):
@@ -75,3 +76,32 @@ class DiscordClient:
         if isinstance(payload, dict):
             return payload
         return {"content": str(report.get("message", ""))[:2000]}
+
+    def send_with_file(self, channel_id: str, payload: dict, filename: str, data: bytes,
+                       content_type: str = "image/png") -> dict | None:
+        """Post a message payload with one attached file (multipart/form-data)."""
+        boundary = f"----imposterfinder{uuid.uuid4().hex}"
+        parts = [
+            f"--{boundary}\r\nContent-Disposition: form-data; name=\"payload_json\"\r\n"
+            f"Content-Type: application/json\r\n\r\n".encode() + json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+            f"--{boundary}\r\nContent-Disposition: form-data; name=\"files[0]\"; filename=\"{filename}\"\r\n"
+            f"Content-Type: {content_type}\r\n\r\n".encode() + data,
+        ]
+        body = b"\r\n".join(parts) + f"\r\n--{boundary}--\r\n".encode()
+        req = urllib.request.Request(
+            f"https://discord.com/api/v10/channels/{channel_id}/messages",
+            data=body,
+            method="POST",
+            headers={
+                "Authorization": f"Bot {self.bot_token}",
+                "Content-Type": f"multipart/form-data; boundary={boundary}",
+                "User-Agent": "imposter-finder/0.1",
+            },
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                raw = resp.read().decode("utf-8")
+                return json.loads(raw) if raw else None
+        except urllib.error.HTTPError as exc:
+            raw = exc.read().decode("utf-8", errors="replace")
+            raise DiscordError(f"Discord HTTP {exc.code}: {raw[:500]}") from exc

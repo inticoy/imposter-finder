@@ -44,6 +44,29 @@ class LocalStore:
                     processed_at TEXT NOT NULL,
                     PRIMARY KEY (platform, match_id)
                 );
+                CREATE TABLE IF NOT EXISTS fc_users (
+                    nickname TEXT PRIMARY KEY,
+                    ouid TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS fc_matches (
+                    match_id TEXT PRIMARY KEY,
+                    match_type INTEGER NOT NULL,
+                    match_date TEXT NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    collected_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS fc_match_users (
+                    match_id TEXT NOT NULL,
+                    ouid TEXT NOT NULL,
+                    PRIMARY KEY (match_id, ouid)
+                );
+                CREATE TABLE IF NOT EXISTS api_usage (
+                    api TEXT NOT NULL,
+                    day TEXT NOT NULL,
+                    calls INTEGER NOT NULL,
+                    PRIMARY KEY (api, day)
+                );
                 """
             )
             self._connection.commit()
@@ -106,6 +129,66 @@ class LocalStore:
                 (platform, match_id, outcome, _now()),
             )
             self._connection.commit()
+
+    # ── FC 온라인 ──────────────────────────────────────
+    def fc_ouid(self, nickname: str) -> str | None:
+        with self._lock:
+            row = self._connection.execute("SELECT ouid FROM fc_users WHERE nickname = ?", (nickname,)).fetchone()
+        return row["ouid"] if row else None
+
+    def set_fc_ouid(self, nickname: str, ouid: str) -> None:
+        with self._lock:
+            self._connection.execute(
+                "INSERT OR REPLACE INTO fc_users (nickname, ouid, updated_at) VALUES (?, ?, ?)", (nickname, ouid, _now()))
+            self._connection.commit()
+
+    def has_fc_matches(self) -> bool:
+        with self._lock:
+            return self._connection.execute("SELECT 1 FROM fc_matches LIMIT 1").fetchone() is not None
+
+    def fc_match(self, match_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT payload_json FROM fc_matches WHERE match_id = ?", (match_id,)).fetchone()
+        return json.loads(row["payload_json"]) if row else None
+
+    def upsert_fc_match(self, match: dict[str, Any]) -> None:
+        with self._lock:
+            self._connection.execute(
+                "INSERT OR REPLACE INTO fc_matches (match_id, match_type, match_date, payload_json, collected_at)"
+                " VALUES (?, ?, ?, ?, ?)",
+                (match["matchId"], match["matchType"], match["matchDate"],
+                 json.dumps(match, ensure_ascii=False, separators=(",", ":")), _now()),
+            )
+            self._connection.executemany(
+                "INSERT OR IGNORE INTO fc_match_users (match_id, ouid) VALUES (?, ?)",
+                [(match["matchId"], info["ouid"]) for info in match.get("matchInfo", [])],
+            )
+            self._connection.commit()
+
+    def fc_head_to_head(self, ouid_a: str, ouid_b: str, limit: int = 10) -> list[dict[str, Any]]:
+        """두 사람이 함께 뛴 경기, 최신순."""
+        with self._lock:
+            rows = self._connection.execute(
+                """
+                SELECT m.payload_json FROM fc_matches m
+                JOIN fc_match_users a ON a.match_id = m.match_id AND a.ouid = ?
+                JOIN fc_match_users b ON b.match_id = m.match_id AND b.ouid = ?
+                ORDER BY m.match_date DESC LIMIT ?
+                """,
+                (ouid_a, ouid_b, limit),
+            ).fetchall()
+        return [json.loads(row["payload_json"]) for row in rows]
+
+    # ── API 사용량 ────────────────────────────────────
+    def add_api_call(self, api: str, day: str) -> int:
+        with self._lock:
+            self._connection.execute(
+                "INSERT INTO api_usage (api, day, calls) VALUES (?, ?, 1)"
+                " ON CONFLICT (api, day) DO UPDATE SET calls = calls + 1", (api, day))
+            self._connection.commit()
+            return self._connection.execute(
+                "SELECT calls FROM api_usage WHERE api = ? AND day = ?", (api, day)).fetchone()["calls"]
 
     def close(self) -> None:
         with self._lock:
