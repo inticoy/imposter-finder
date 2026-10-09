@@ -45,7 +45,7 @@ class Settings:
     nexon_daily_limit: int = 900
     gemini_api_key: str | None = None
     gemini_model: str = "gemini-3.5-flash-lite"
-    # FC 리포트는 BETA·REAL thread에 함께 보낸다
+    # FC 리포트는 BOT_ENV에 맞는 thread 하나로 보낸다
     discord_fc_thread_ids: tuple[str, ...] = ()
     fc_poll_interval_minutes: float = 15.0
 
@@ -81,8 +81,6 @@ def load_settings() -> Settings:
         nexon_daily_limit=int(env("NEXON_DAILY_LIMIT", "900")),
         gemini_api_key=env("GEMINI_API_KEY"),
         gemini_model=env("GEMINI_MODEL", "gemini-3.5-flash-lite"),
-        discord_fc_thread_ids=tuple(
-            thread for thread in (env("DISCORD_THREAD_FC_DEV"), env("DISCORD_THREAD_FC_PROD")) if thread
-        ),
+        discord_fc_thread_ids=tuple(thread for thread in (env(f"DISCORD_THREAD_FC_{bot_env.upper()}"),) if thread),
         fc_poll_interval_minutes=float(env("FC_POLL_INTERVAL_MINUTES", "15")),
     )

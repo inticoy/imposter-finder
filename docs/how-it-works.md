@@ -33,7 +33,7 @@ launchd (KeepAlive)
 
 1. 15분마다 `players.json`에 FC 닉네임이 있는 친구마다 **클래식 1on1(40)** 최근 20경기 목록을 받습니다.
 2. 두 명 이상의 목록에 같은 경기 ID가 있으면 친구전입니다. 상세를 받아 `fc_matches`에 쌓습니다.
-3. 새 친구전(24시간 이내)은 FC thread(BETA·REAL)에 **조용히(@silent)** 두 사람을 태그해 보냅니다.
+3. 새 친구전(24시간 이내)은 `BOT_ENV`에 맞는 FC thread(dev=BETA, prod=REAL)에 **조용히(@silent)** 두 사람을 태그해 보냅니다.
 
 | 카드 | 내용 |
 |---|---|

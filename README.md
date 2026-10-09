@@ -22,7 +22,7 @@ cp players.example.json players.json   # 친구 목록 (커밋 안 함)
 | `PUBG_API_KEY`, `PUBG_PLATFORM` | [PUBG Developer](https://developer.pubg.com)에서 발급 |
 | `PUBG_MAX_MATCH_AGE_HOURS` | 이보다 오래된 매치는 알리지 않음 (기본 12) |
 | `NEXON_API_KEY` | FC 온라인, [NEXON Open API](https://openapi.nexon.com)에서 발급 (`test_` 키 하루 1,000회, 900회에서 멈춤) |
-| `DISCORD_THREAD_FC_DEV` / `_PROD` | FC 리포트를 보낼 thread (둘 다 있으면 둘 다 보냄) |
+| `DISCORD_THREAD_FC_DEV` / `_PROD` | FC 리포트를 보낼 thread (`BOT_ENV`에 맞는 쪽) |
 | `GEMINI_API_KEY` | FC 경기 한 줄 평가 (없으면 평가 없이 보냄) |
 | `HEALTHCHECK_IMPOSTER_FINDER_URL` | 선택: 수집 주기마다 Healthchecks.io 핑 |
 
