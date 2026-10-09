@@ -1,4 +1,6 @@
-# Game API Capabilities
+# 게임 API 조사
+
+> 2026-05 초기 조사 자료입니다. 현재 동작은 [how-it-works.md](how-it-works.md), FC 온라인 계획은 [versions.md](versions.md)를 보세요.
 
 이 문서는 범인찾기 봇이 게임별로 가져올 수 있는 정보와 구현 가능성을 정리한다.
 

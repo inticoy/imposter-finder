@@ -25,8 +25,8 @@
   <key>ThrottleInterval</key>
   <integer>10</integer>
   <key>StandardOutPath</key>
-  <string>/Users/inticoy/GitHub/inticoy/imposter-finder/data/imposter-finder.log</string>
+  <string>/Users/inticoy/GitHub/inticoy/imposter-finder/logs/imposter-finder.log</string>
   <key>StandardErrorPath</key>
-  <string>/Users/inticoy/GitHub/inticoy/imposter-finder/data/imposter-finder-error.log</string>
+  <string>/Users/inticoy/GitHub/inticoy/imposter-finder/logs/imposter-finder-error.log</string>
 </dict>
 </plist>

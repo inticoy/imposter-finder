@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>범인찾기 동작 흐름</title>
+<style>
+:root{
+  --bg:#f6f7f9; --card:#fff; --text:#1c2230; --muted:#667085; --line:#d5dae3;
+  --neutral-bg:#eef0f4; --neutral-bd:#cfd5e0;
+  --fail-bg:#fdeceb; --fail-bd:#e5675f; --fail-tx:#a3231b;
+  --ok-bg:#e6f6ec; --ok-bd:#3fa968; --ok-tx:#1b6b3a;
+  --warn-bg:#fff4dc; --warn-bd:#e0a21b; --warn-tx:#7a5200;
+  --blue-bg:#e5f0ff; --blue-bd:#3b82f6; --blue-tx:#1d4ed8;
+  --ai-bg:#f1eaff; --ai-bd:#8b5cf6; --ai-tx:#5b21b6;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#12151c; --card:#1b1f29; --text:#e8ebf2; --muted:#98a2b3; --line:#3a4254;
+    --neutral-bg:#262b38; --neutral-bd:#3d4558;
+    --fail-bg:#3a1d1d; --fail-bd:#d9534b; --fail-tx:#ff9a92;
+    --ok-bg:#16301f; --ok-bd:#3fa968; --ok-tx:#8de0ab;
+    --warn-bg:#3a2e12; --warn-bd:#e0a21b; --warn-tx:#f5cf74;
+    --blue-bg:#16294a; --blue-bd:#4c8dff; --blue-tx:#9cc2ff;
+    --ai-bg:#2a1f45; --ai-bd:#a78bfa; --ai-tx:#d4c4ff;
+  }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);
+  font:15px/1.55 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",system-ui,sans-serif;
+  word-break:keep-all;overflow-wrap:anywhere}
+main{max-width:1180px;margin:0 auto;padding:32px 16px 56px}
+h1{margin:0 0 6px;font-size:26px}
+.sum{margin:0 0 20px;color:var(--muted)}
+.cols{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;align-items:start}
+@media (max-width:960px){.cols{grid-template-columns:1fr}}
+.col{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 16px}
+.col h2{margin:0 0 2px;font-size:18px}
+.col .sub{margin:0 0 16px;color:var(--muted);font-size:13px}
+.flow{display:flex;flex-direction:column;align-items:center}
+.node{width:100%;border:1.5px solid var(--neutral-bd);background:var(--neutral-bg);border-radius:10px;padding:9px 12px;text-align:center;font-size:14px}
+.node small{display:block;font-size:12px;margin-top:2px;opacity:.8}
+.n-fail{background:var(--fail-bg);border-color:var(--fail-bd);color:var(--fail-tx)}
+.n-ok{background:var(--ok-bg);border-color:var(--ok-bd);color:var(--ok-tx)}
+.n-warn{background:var(--warn-bg);border-color:var(--warn-bd);color:var(--warn-tx)}
+.n-blue{background:var(--blue-bg);border-color:var(--blue-bd);color:var(--blue-tx)}
+.n-ai{background:var(--ai-bg);border-color:var(--ai-bd);color:var(--ai-tx)}
+.n-dec{border-style:dashed;font-weight:600}
+.n-plan{border-style:dashed;opacity:.85}
+.col.plan{border-style:dashed}
+.arrow{width:2px;height:16px;background:var(--line);position:relative;margin:0 auto}
+.arrow::after{content:"";position:absolute;bottom:-1px;left:-4px;border:5px solid transparent;border-top:7px solid var(--line);border-bottom:0}
+.branches{display:grid;grid-template-columns:1fr 1fr;gap:8px;width:100%}
+.br{display:flex;flex-direction:column;align-items:center}
+.br .lbl{font-size:11px;color:var(--muted);margin-bottom:4px;text-align:center}
+.br .node{font-size:13px;padding:8px}
+.legend{display:flex;flex-wrap:wrap;gap:8px 14px;margin:0 0 18px;font-size:12px;color:var(--muted)}
+.legend i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:5px;vertical-align:-1px;border:1.5px solid}
+h3{margin:30px 0 10px;font-size:17px}
+.tw{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:var(--card)}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{padding:9px 12px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+tr:last-child td,tr:last-child th{border-bottom:0}
+thead th{background:var(--neutral-bg)}
+tbody th{font-weight:600;white-space:nowrap}
+.bad{color:var(--fail-tx)} .good{color:var(--ok-tx)}
+code{background:var(--neutral-bg);padding:1px 5px;border-radius:4px;font-size:.9em}
+.node code{background:none;padding:0;font-size:inherit}
+.lane-label{width:100%;margin:14px 0 6px;font-size:12px;font-weight:600;color:var(--muted)}
+.lane-label:first-child{margin-top:0}
+.stack{width:100%;display:flex;flex-direction:column;gap:6px}
+</style>
+</head>
+<body>
+<main>
+  <h1>범인찾기 동작 흐름</h1>
+  <p class="sum">맥의 launchd가 상주 프로세스 하나(<code>serve</code>)를 돌립니다. 그 안에서 15분마다 PUBG 그룹 매치를 찾아 범인을 가리고, <code>/user</code> 명령에 전적 감정서로 답합니다. FC 온라인은 v3로 준비 중입니다. (2026-10-09)</p>
+
+  <div class="legend">
+    <span><i style="background:var(--neutral-bg);border-color:var(--neutral-bd)"></i>일반</span>
+    <span><i style="background:var(--blue-bg);border-color:var(--blue-bd)"></i>게임 API</span>
+    <span><i style="background:var(--ai-bg);border-color:var(--ai-bd)"></i>분석</span>
+    <span><i style="background:var(--ok-bg);border-color:var(--ok-bd)"></i>Discord 전송</span>
+    <span><i style="background:var(--fail-bg);border-color:var(--fail-bd)"></i>건너뜀 / 실패</span>
+  </div>
+
+  <div class="cols">
+    <section class="col">
+      <h2>🕵️ 범인찾기 리포트</h2>
+      <p class="sub">15분 수집 루프 · <code>collector.py</code></p>
+      <div class="flow">
+        <div class="node n-blue">친구마다 최근 30경기 조회<small>players.json의 PUBG 닉네임</small></div>
+        <div class="arrow"></div>
+        <div class="node">SQLite에 매치·친구 연결 저장</div>
+        <div class="arrow"></div>
+        <div class="node n-dec">처리 안 한 매치인가?</div>
+        <div class="arrow"></div>
+        <div class="branches">
+          <div class="br"><div class="lbl">12시간 넘음 / 친구 1명뿐</div>
+            <div class="node n-fail">건너뜀<small>too_old / not_a_group_match</small></div></div>
+          <div class="br"><div class="lbl">친구 2명 이상</div>
+            <div class="node n-blue">텔레메트리 받기</div>
+            <div class="arrow"></div>
+            <div class="node n-ai">친구별 평점 0~5<small>0딜·첫 사망 등 감점</small></div></div>
+        </div>
+        <div class="arrow"></div>
+        <div class="node n-ok">가장 낮은 사람 = 범인 리포트<small>범인찾기 thread</small></div>
+        <div class="arrow"></div>
+        <div class="node">sent 기록 → Healthchecks 핑</div>
+      </div>
+    </section>
+
+    <section class="col">
+      <h2>📋 /user 전적 감정서</h2>
+      <p class="sub">슬래시 명령 · <code>bot.py</code></p>
+      <div class="flow">
+        <div class="node">/user 이름 [판수]<small>이름 자동완성, 기본 30판</small></div>
+        <div class="arrow"></div>
+        <div class="node n-dec">DB에 경기가 충분한가?</div>
+        <div class="arrow"></div>
+        <div class="branches">
+          <div class="br"><div class="lbl">예</div>
+            <div class="node">DB 경기 사용</div></div>
+          <div class="br"><div class="lbl">아니오</div>
+            <div class="node n-blue">PUBG API로 채워 저장</div></div>
+        </div>
+        <div class="arrow"></div>
+        <div class="node n-ai">6개 지표 0~100<small>화력·마무리·생존·팀워크·안정성·순위</small></div>
+        <div class="arrow"></div>
+        <div class="node n-ai">가중 점수 → 등급<small>S 85+ · A 70+ · B 55+ · C 40+ · E 25+ · F</small></div>
+        <div class="arrow"></div>
+        <div class="node n-ok">감정서 embed + 방사형 그래프</div>
+      </div>
+    </section>
+
+    <section class="col plan">
+      <h2>⚽ FC 온라인 (v3 계획)</h2>
+      <p class="sub">별도 thread · <code>NEXON_API_KEY</code></p>
+      <div class="flow">
+        <div class="lane-label">친구전 분석</div>
+        <div class="node n-blue n-plan">닉네임 → ouid → 경기 목록<small>matchtype 30/40/60 확인 필요</small></div>
+        <div class="arrow"></div>
+        <div class="node n-plan">상대가 등록된 친구인 경기만</div>
+        <div class="arrow"></div>
+        <div class="node n-ai n-plan">전적·점유율·슈팅·평점 + 한 줄 총평</div>
+
+        <div class="lane-label">스쿼드 · 선수</div>
+        <div class="node n-blue n-plan">최근 경기 출전 선수로 스쿼드 재구성<small>스쿼드 API 없음</small></div>
+        <div class="arrow"></div>
+        <div class="node n-plan">메타데이터 이름 + 미니페이스온<small>spid.json, 공식 CDN</small></div>
+        <div class="arrow"></div>
+        <div class="node n-plan">데이터센터 능력치·특성<small>내부 요청, DB 저장 · 30일 내 갱신</small></div>
+        <div class="arrow"></div>
+        <div class="node n-ok n-plan">FC thread에 카드</div>
+      </div>
+    </section>
+  </div>
+
+  <h3>쓰는 것</h3>
+  <div class="tw">
+    <table>
+      <tbody>
+        <tr><th>실행</th><td>launchd <code>com.inticoy.imposter-finder</code> (KeepAlive), Python 3.14</td></tr>
+        <tr><th>게임 API</th><td>PUBG Developer API · NEXON Open API (FC, <code>test_</code> 키 하루 1,000회)</td></tr>
+        <tr><th>저장</th><td><code>data/imposter_finder.db</code>(매치·알림 기록), <code>players.json</code>(친구·계정) — 커밋 안 함</td></tr>
+        <tr><th>감시</th><td>수집 주기마다 Healthchecks 핑, 실패 시 <code>/fail</code></td></tr>
+        <tr><th>로그</th><td><code>logs/imposter-finder.log</code>, <code>logs/imposter-finder-error.log</code></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>변천</h3>
+  <div class="tw">
+    <table>
+      <tbody>
+        <tr><th>v1</th><td>GitHub Actions + cron-job.org, <code>seen_matches.json</code> 커밋 (2026-05 ~ 08)</td></tr>
+        <tr><th>v2</th><td>맥 상주 봇 + SQLite + <code>/user</code> (2026-08 ~, 10-09에 Python 3.14·로그 정리)</td></tr>
+        <tr><th>v3</th><td class="good">FC 온라인 친구전·스쿼드·선수 정보 + <code>@멘션</code> 자연어 (계획)</td></tr>
+      </tbody>
+    </table>
+  </div>
+</main>
+</body>
+</html>
