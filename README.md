@@ -2,7 +2,7 @@
 
 친구들끼리 한 PUBG 경기를 분석해 "범인"을 찾아 Discord에 올리고, `/user`로 친구별 최근 전적 감정서를 보여주는 봇입니다. FC 온라인 친구전도 끝나면 MVP·범인·스탯 그래프·AI 평가를 올립니다. 이 Mac에서 상주 프로세스로 돕니다.
 
-동작 방식과 버전별 계획은 [docs/](docs/)에 있습니다.
+동작 방식은 [docs/how-it-works.md](docs/how-it-works.md), 버전과 계획은 [docs/versions.md](docs/versions.md), FC 데이터는 [docs/fc-online.md](docs/fc-online.md), 흐름도는 [docs/flow.html](docs/flow.html)에 있습니다.
 
 ## 설정
 
