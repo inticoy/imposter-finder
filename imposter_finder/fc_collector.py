@@ -5,20 +5,20 @@
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from imposter_finder.analysis.fc_report import Friend, build_forfeit_report, build_report, is_forfeit
 from imposter_finder.config import ROOT_DIR, Settings
 from imposter_finder.discord import DiscordClient
-from imposter_finder.games.fconline import KST, FcMeta, FcOnlineClient, NexonApiError, NexonQuotaExceeded
+from imposter_finder.games.fconline import FcMeta, FcOnlineClient, NexonApiError, NexonQuotaExceeded
 from imposter_finder.registry import load_fc_players
 from imposter_finder.storage import LocalStore
 
 PLATFORM = "fconline"  # match_notifications 구분자
 RECENT_LIMIT = 20  # 평소에는 최근 20경기만 본다 (15분 사이에 20경기 넘게 하지 않는다)
 BACKFILL_LIMIT = 100  # 첫 실행에는 넥슨이 보여주는 만큼 (약 30일치) 다 받는다
-# 넥슨 반영이 최대 2시간쯤 늦고, matchDate의 시간대가 문서에 분명하지 않아 넉넉히 둔다
+# 넥슨 반영이 2~3시간쯤 늦어서 넉넉히 둔다
 MAX_AGE = timedelta(hours=24)
 
 _meta: FcMeta | None = None
@@ -92,7 +92,8 @@ def run_fc_cycle(settings: Settings, store: LocalStore, notify: bool) -> dict[st
 
 def _too_old(match: dict[str, Any]) -> bool:
     try:
-        played = datetime.fromisoformat(match["matchDate"]).replace(tzinfo=KST)
+        # matchDate는 UTC다 (랭커들의 최신 경기 시각이 한국 시간보다 9시간 앞서 멈춰 있는 것으로 확인)
+        played = datetime.fromisoformat(match["matchDate"]).replace(tzinfo=timezone.utc)
     except (KeyError, ValueError):
         return False
-    return datetime.now(KST) - played > MAX_AGE
+    return datetime.now(timezone.utc) - played > MAX_AGE

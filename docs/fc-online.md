@@ -6,7 +6,7 @@ FC 기능을 만들 때 쓰는 데이터 출처와 규칙입니다. 동작 방�
 
 | 데이터 | 출처 | 비고 |
 |---|---|---|
-| 닉네임 → ouid, 경기 목록, 경기 상세 | NEXON Open API `open.api.nexon.com/fconline/v1/...` | 키 필요. `test_` 키는 하루 1,000회. 반영 최대 약 2시간 지연 |
+| 닉네임 → ouid, 경기 목록, 경기 상세 | NEXON Open API `open.api.nexon.com/fconline/v1/...` | 키 필요. `test_` 키는 하루 1,000회. 반영 약 2~3시간 지연 |
 | 선수 이름, 시즌, 포지션, 등급 | 공개 메타데이터 `open.api.nexon.com/static/fconline/meta/{spid,seasonid,spposition,division}.json` | 키 불필요. 선수 88,359명, 시즌 153개 |
 | 미니페이스온 | `fco.dn.nexoncdn.co.kr/live/externalAssets/common/playersAction/p{spid}.png` | 공식 CDN |
 | 오버롤(포지션별 28개)·급여·시세 | 데이터센터 내부 `GET /DataCenter/SquadMakerPlayerList?strPlayerName=` | 공식 API 아님, JSON |
@@ -32,6 +32,7 @@ FC 기능을 만들 때 쓰는 데이터 출처와 규칙입니다. 동작 방�
 - 슈팅(총·유효·골·종류), 패스(시도·성공), 수비(태클·블록)
 - 출전 선수마다 spId·포지션·강화 등급과 개인 기록(골·도움·슈팅·패스·드리블·태클·평점)
 - 슈팅 상세: 시간, 좌표(x, y 0~1), 결과, 슈터·어시스트 선수와 어시스트 좌표, 페널티 박스 여부
+- `matchDate`는 **UTC**입니다 (2026-10-10 00:11 KST에 랭커 5명의 최신 경기가 10/9 12:44로 찍혀 있었음 = 21:44 KST). 한국 시간은 +9시간
 - `matchEndType`: 0 정상, 1 몰수승, 2 몰수패(중도 이탈). 몰수패 쪽은 스탯이 비어 있을 수 있음
 - 선수 `spPosition` 28은 벤치(SUB). 경기마다 선발 11 + 벤치 7 = 18명
 
