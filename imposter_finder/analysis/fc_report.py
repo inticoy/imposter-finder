@@ -65,15 +65,13 @@ def build_report(match: dict[str, Any], head_to_head: list[dict[str, Any]], frie
 
     score = (f"## {'👑 ' if left_won else ''}{left['nickname']}  "
              f"{goals(left)} : {goals(right)}  {right['nickname']}")
-    lines = [score, _head_to_head_line(head_to_head, left["ouid"], right["ouid"], lf, rf), "",
-             _mvp_line(match, friends, meta), _culprit_line(match, friends, meta)]
-
+    header = {"type": 10, "content": f"{score}\n{_head_to_head_line(head_to_head, left['ouid'], right['ouid'], lf, rf)}"}
     evaluation = _evaluate(left, right, lf, rf, meta, gemini_api_key, gemini_model)
-    mvp_spid = _mvp(match)[1]["spId"]
-    header = {"type": 10, "content": "\n".join(lines)}
-    image = player_image(mvp_spid)
-    top = {"type": 9, "components": [header], "accessory": {"type": 11, "media": {"url": image}}} if image else header
-    components = [top, {"type": 12, "items": [{"media": {"url": "attachment://stats.png"}}]}]
+    # MVP와 범인은 각자 구역에 두어 선수 이미지를 하나씩 붙인다
+    components = [header,
+                  _player_section(_mvp_line(match, friends, meta), _mvp(match)[1]["spId"]),
+                  _player_section(_culprit_line(match, friends, meta), _culprit(match)[1]["spId"]),
+                  {"type": 12, "items": [{"media": {"url": "attachment://stats.png"}}]}]
     if evaluation:
         components.append({"type": 10, "content": "**평가**\n" + "\n".join(evaluation)})
 
@@ -90,6 +88,12 @@ def build_report(match: dict[str, Any], head_to_head: list[dict[str, Any]], frie
     chart = render_stats_chart(left["nickname"], _chart_rows(left), right["nickname"], _chart_rows(right),
                                winner="left" if left_won else "right" if right["matchDetail"]["matchResult"] == "승" else None)
     return payload, chart
+
+
+def _player_section(text: str, spid: int) -> dict[str, Any]:
+    body = {"type": 10, "content": text}
+    image = player_image(spid)
+    return {"type": 9, "components": [body], "accessory": {"type": 11, "media": {"url": image}}} if image else body
 
 
 def _head_to_head_line(games: list[dict[str, Any]], ouid_l: str, ouid_r: str, lf: Friend, rf: Friend) -> str:
@@ -219,9 +223,10 @@ def _evaluate(left: dict, right: dict, lf: Friend, rf: Friend, meta: FcMeta,
 
     names = [lf.name, rf.name]
     prompt = ("FC 온라인 1:1 친선 경기 기록이야. 친구끼리 보는 디스코드 리포트에 넣을 한 줄 평가를 써줘.\n"
-              "두 사람 각각 '{이름}은/는 ...했습니다.' 형식의 40자 이내 한 문장으로, 이번 경기에서 있었던 일만 써. "
-              "조언이나 '~해보세요' 같은 제안은 쓰지 마. 가장 결정적인 수치 하나만 근거로 하고, "
-              "수치는 기록에 있는 값을 그대로 쓰고 '모두', '전부'처럼 기록과 다른 해석을 붙이지 마. "
+              "두 사람 각각 '{이름}은/는 ...했습니다.' 형식의 45자 이내 한 문장으로, 이번 경기에서 있었던 일만 써. "
+              "승패를 가른 수치 하나와 그 의미를 함께 써. 좋은 예: '건우는 유효슈팅 5개 중 3골을 넣는 결정력을 보였습니다.', "
+              "'도윤은 점유율 58%를 잡고도 유효슈팅이 2개에 그쳤습니다.' 나쁜 예: '건우는 골 3개를 기록했습니다.'(의미 없음), "
+              "'유효슈팅 5개를 모두 골로'(기록과 다름). 수치는 기록 값을 그대로 쓰고, 조언이나 '~해보세요'는 쓰지 마. "
               "조사 은/는을 이름 받침에 맞게, 이모지와 줄표(—, -)는 쓰지 마.\n\n"
               + json.dumps([summary(left, lf), summary(right, rf)], ensure_ascii=False))
     schema = {"type": "object", "properties": {n: {"type": "string"} for n in names}, "required": names}
