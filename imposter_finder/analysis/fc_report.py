@@ -145,11 +145,11 @@ def _player_line(title: str, side: dict[str, Any], player: dict[str, Any], frien
 
 
 def _mvp_line(match: dict[str, Any], friends: dict[str, Friend], meta: FcMeta) -> str:
-    return _player_line("MVP", *_mvp(match), friends, meta)
+    return _player_line("⭐ MVP", *_mvp(match), friends, meta)
 
 
 def _culprit_line(match: dict[str, Any], friends: dict[str, Friend], meta: FcMeta) -> str:
-    return _player_line("범인", *_culprit(match), friends, meta)
+    return _player_line("🔎 범인", *_culprit(match), friends, meta)
 
 
 def _pct(success: int, attempt: int) -> str:
