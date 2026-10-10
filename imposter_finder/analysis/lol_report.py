@@ -13,7 +13,7 @@ from imposter_finder.analysis.cards import (ALLY, BG, DEFEAT, ENEMY, GOLD, HIGHL
                                             SLATE, SS, TRACK, VICTORY, WHITE, WIDTH, _download, ambient_bg, backdrop,
                                             bar, canvas, edge_shadow, font, glass, header, icon, medallion, pill, png,
                                             shade, split_bar)
-from imposter_finder.games.lol import ARENA_QUEUES, QUEUE_NAMES, DDragon
+from imposter_finder.games.lol import ARENA_QUEUES, QUEUE_NAMES, DDragon, opgg_link
 
 ACCENT_WIN, ACCENT_LOSE = 0x2ECC71, 0xED4245
 MAX_LINE_CHARS, MAX_TRIES = 52, 3  # 총평·평가 한 줄 길이 (넘으면 디스코드에서 줄이 바뀐다)
@@ -339,7 +339,7 @@ def build_report(match: dict[str, Any], timeline: dict[str, Any] | None, friends
              "골드 흐름(우리 팀 기준)": _gold_story(diffs) if diffs else "없음",
              "선수": [_player_fact(p, name(p), "MVP" if p is mvp else "범인", stats, ddragon) for p in (mvp, culprit) if p]}
     ai = _evaluate(facts, [name(p) for p in (mvp, culprit) if p], gemini_api_key, gemini_model)
-    return _payload(mine, friends, won, files, ai), files
+    return _payload(mine, friends, won, files, ai, opgg_link([mvp] + [p for p in mine if p is not mvp], info)), files
 
 
 POSITIONS = {"TOP": "탑", "JUNGLE": "정글", "MIDDLE": "미드", "BOTTOM": "원딜", "UTILITY": "서포터"}
@@ -382,10 +382,10 @@ def _build_arena(match: dict, friends: dict[str, Friend], ddragon: DDragon, key:
                                                      "KDA": f"{p['kills']}/{p['deaths']}/{p['assists']}"}
                                                     for p in (mvp, culprit) if p]}
     ai = _evaluate(facts, [name(p) for p in (mvp, culprit) if p], key, model)
-    return _payload(mine, friends, best <= 4, files, ai), files
+    return _payload(mine, friends, best <= 4, files, ai, opgg_link([mvp] + [p for p in mine if p is not mvp], info)), files
 
 
-def _payload(mine: list, friends: dict, won: bool, files: list[tuple], ai: dict) -> dict:
+def _payload(mine: list, friends: dict, won: bool, files: list[tuple], ai: dict, link: str | None = None) -> dict:
     ids = list(dict.fromkeys(friends[p["puuid"]].discord_user_id for p in mine if friends[p["puuid"]].discord_user_id))
     components: list[dict] = [{"type": 12, "items": [{"media": {"url": f"attachment://{name}"}}]} for name, _ in files]
     # 총평과 평가는 이미지 아래에 모은다
@@ -396,6 +396,9 @@ def _payload(mine: list, friends: dict, won: bool, files: list[tuple], ai: dict)
         words.append("**평가**\n" + "\n".join(ai["lines"]))
     if words:
         components.append({"type": 10, "content": "\n\n".join(words)})
+    if link:  # 맨 아래 OP.GG 버튼
+        label = "OP.GG 경기 전적 보기" if "/matches/" in link else "OP.GG 전적 보기"
+        components.append({"type": 1, "components": [{"type": 2, "style": 5, "label": label, "url": link}]})
     return {
         "flags": 32768,  # Components V2 (@silent는 전송할 때 붙는다)
         "allowed_mentions": {"users": ids},

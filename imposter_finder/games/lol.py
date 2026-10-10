@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import re
 import time
+from datetime import datetime
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -87,3 +89,59 @@ class DDragon:
     def champion_icon(self, champion_id: str) -> str:
         self._refresh()
         return f"{DDRAGON}/cdn/{self.version}/img/champion/{champion_id}.png"
+
+
+OPGG = "https://op.gg/ko/lol/summoners/kr"
+OPGG_TIME_SLACK_S = 300  # OP.GG의 경기 시각은 끝난 시각 근처라 우리 기록과 몇십 초 어긋난다
+
+
+def opgg_summoner_url(game_name: str, tag: str) -> str:
+    return f"{OPGG}/{urllib.parse.quote(game_name)}-{urllib.parse.quote(tag)}"
+
+
+def opgg_match_url(participant: dict[str, Any], info: dict[str, Any]) -> str:
+    """OP.GG 경기 상세 링크. 경기 ID는 OP.GG 자체 값이라 소환사 페이지의 최근 경기 목록(JSON-LD)에서 찾는다.
+    못 찾으면 (아직 OP.GG에 갱신 전 등) 소환사 페이지 링크."""
+    summoner = opgg_summoner_url(participant["riotIdGameName"], participant["riotIdTagline"])
+    ended_s = (info["gameStartTimestamp"] + info["gameDuration"] * 1000) / 1000
+    try:
+        req = urllib.request.Request(summoner, headers={"User-Agent": "Mozilla/5.0 (Macintosh) Chrome/141.0"})
+        html = urllib.request.urlopen(req, timeout=20).read().decode("utf-8", errors="replace")
+        for block in re.findall(r'<script type="application/ld\+json"[^>]*>(.*?)</script>', html, re.S):
+            if "matchId" not in block:
+                continue
+            for item in _ld_items(json.loads(block)):
+                props = {p.get("name"): p.get("value") for p in item.get("additionalProperty", [])}
+                when = datetime.fromisoformat(item["startTime"]).timestamp()
+                same = (props.get("kills"), props.get("deaths"), props.get("assists")) == (
+                    participant["kills"], participant["deaths"], participant["assists"])
+                if same and abs(when - ended_s) < OPGG_TIME_SLACK_S and props.get("matchId"):
+                    return f"{summoner}/matches/{urllib.parse.quote(props['matchId'], safe='')}/{int(when) * 1000}"
+    except Exception as exc:  # OP.GG 페이지가 바뀌거나 막혀도 리포트는 보낸다
+        print(f"[lol] opgg lookup failed: {exc}")
+    return summoner
+
+
+def opgg_link(participants: list[dict[str, Any]], info: dict[str, Any]) -> str | None:
+    """친구들 페이지를 차례로 보며 경기 상세 링크를 찾고, 없으면 첫 친구의 소환사 페이지."""
+    fallback = None
+    for participant in participants:
+        url = opgg_match_url(participant, info)
+        if "/matches/" in url:
+            return url
+        fallback = fallback or url
+    return fallback
+
+
+def _ld_items(node: Any) -> list[dict]:
+    """JSON-LD 안의 PlayGameAction(경기)들을 모두 꺼낸다."""
+    found = []
+    if isinstance(node, dict):
+        if node.get("@type") == "PlayGameAction":
+            found.append(node)
+        for value in node.values():
+            found += _ld_items(value)
+    elif isinstance(node, list):
+        for value in node:
+            found += _ld_items(value)
+    return found
