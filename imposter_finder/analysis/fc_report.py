@@ -534,6 +534,9 @@ def _face(url: str, d: int, ring: tuple | None) -> Image.Image | None:
     layer.paste(Image.new("RGBA", (size, size), (34, 38, 46, 255)), (0, 0), disc)
     try:
         face = Image.open(BytesIO(_download(url))).convert("RGBA")
+        if "/playersAction/" in url:  # 상반신 사진이라 얼굴 쪽(위 가운데)만 자른다
+            w = face.width
+            face = face.crop((round(w * 0.11), 0, round(w * 0.89), round(w * 0.78)))
         face = face.resize((size, round(face.height * size / face.width)), Image.LANCZOS)
         crop = face.crop((0, 0, size, size))
         layer.paste(crop, (0, 0), ImageChops.multiply(crop.getchannel("A"), disc))

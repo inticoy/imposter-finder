@@ -226,7 +226,8 @@ def format_bp(value: int) -> str:
 
 @lru_cache(maxsize=1024)
 def face_image(spid: int) -> str:
-    return f"{IMAGE_BASE}/players/p{spid % 1000000}.png"
+    """시즌 얼굴(그 시즌 유니폼, 128px 상반신)이 있으면 그것, 없으면 기본 얼굴."""
+    return player_image(spid) or f"{IMAGE_BASE}/players/p{spid % 1000000}.png"
 
 
 @lru_cache(maxsize=1024)
