@@ -18,16 +18,15 @@
     <th width="33%">⚽ FC 온라인</th>
   </tr>
   <tr>
-    <td valign="top"><a href="docs/images/pubg.gif"><img src="docs/images/pubg.gif" width="300" alt="배그 리포트"></a></td>
-    <td valign="top"><a href="docs/images/lol.gif"><img src="docs/images/lol.gif" width="300" alt="롤 리포트"></a></td>
-    <td valign="top"><a href="docs/images/fc.png"><img src="docs/images/fc.png" width="300" alt="FC 리포트"></a></td>
-  </tr>
-  <tr>
-    <td valign="top">결과·순위 → 스쿼드 기록(MVP·범인) → 이동 경로 → 교전 흐름 → 쓴 무기. 이동 경로와 교전 흐름은 같은 시간표로 함께 재생되고, 처치·기절·사망 순간이 장면으로 잡힙니다. 팀 데스매치는 라운드 결과·양 팀 비교·무기.</td>
-    <td valign="top">결과 → 선수 비교(MVP·ACE·범인) → 오브젝트 → 골드 차이. 골드 곡선은 분 단위로 그려지고 드래곤·바론은 처치한 시점에 나타납니다. 한 사람이 여러 계정을 써도 사람 기준으로 친구전을 찾습니다.</td>
-    <td valign="top">클래식 1on1을 축구 중계 화면처럼: 스코어보드(팀컬러 엠블럼·구단 가치·맞대결 10경기) → MVP·범인 → 경기 기록 → 슈팅맵 → 라인업.</td>
+    <td width="33%" valign="top"><a href="docs/images/pubg.gif"><img src="docs/images/pubg.gif" width="300" alt="배그 리포트"></a></td>
+    <td width="33%" valign="top"><a href="docs/images/lol.gif"><img src="docs/images/lol.gif" width="300" alt="롤 리포트"></a></td>
+    <td width="33%" valign="top"><a href="docs/images/fc.png"><img src="docs/images/fc.png" width="300" alt="FC 리포트"></a></td>
   </tr>
 </table>
+
+- **배그**: 결과·순위 · 스쿼드 기록(MVP·범인) · 이동 경로 GIF · 교전 흐름 GIF · 쓴 무기 / 팀 데스매치는 라운드 결과·양 팀 비교
+- **롤**: 결과 · 선수 비교(MVP·ACE·범인) · 오브젝트 · 골드 차이 GIF · OP.GG 버튼 / 부계정도 사람 기준으로
+- **FC**: 스코어보드(엠블럼·구단 가치·맞대결 10경기) · MVP·범인 · 경기 기록 · 슈팅맵 · 라인업
 
 ## 문서
 
