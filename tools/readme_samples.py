@@ -5,7 +5,7 @@
 
     PYTHONPATH=. .venv/bin/python tools/readme_samples.py --pubg <match id> --lol <match id> --fc <match id>
 
-결과: docs/images/{pubg,lol,fc}.(gif|png) — 디스코드에 올라온 모습 그대로 한 장 (tools/discord_mock.py).
+결과: docs/images/report-{pubg,lol,fc}.(gif|png) — 디스코드에 올라온 모습 그대로 한 장 (tools/discord_mock.py).
 리포트 원본은 data/samples/에 두고, --compose-only면 API 호출 없이 그 원본으로 다시 합성만 한다.
 """
 from __future__ import annotations
@@ -101,10 +101,10 @@ def compose_all() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     for game, game_frames in frames.items():
         data, ext = encode(game_frames, height)
-        for old in OUT.glob(f"{game}.*"):
+        for old in OUT.glob(f"report-{game}.*"):
             old.unlink()
-        (OUT / f"{game}.{ext}").write_bytes(data)
-        print(f"{game}.{ext} {len(data) / 2**20:.2f}MB")
+        (OUT / f"report-{game}.{ext}").write_bytes(data)
+        print(f"report-{game}.{ext} {len(data) / 2**20:.2f}MB")
 
 
 def main() -> None:
