@@ -73,6 +73,23 @@ class LocalStore:
                     payload_json TEXT NOT NULL,
                     collected_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS tft_accounts (
+                    riot_id TEXT PRIMARY KEY COLLATE NOCASE,
+                    puuid TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS tft_matches (
+                    match_id TEXT PRIMARY KEY,
+                    queue_id INTEGER NOT NULL,
+                    game_datetime INTEGER NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    collected_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS tft_ranks (
+                    puuid TEXT PRIMARY KEY,
+                    payload_json TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS api_usage (
                     api TEXT NOT NULL,
                     day TEXT NOT NULL,
@@ -221,6 +238,49 @@ class LocalStore:
                 " VALUES (?, ?, ?, ?, ?)",
                 (match["metadata"]["matchId"], info["queueId"], info["gameCreation"],
                  json.dumps(match, ensure_ascii=False, separators=(",", ":")), _now()))
+            self._connection.commit()
+
+    # ── TFT (puuid는 Riot 키마다 달라 롤과 따로) ──────────
+    def tft_puuid(self, riot_id: str) -> str | None:
+        with self._lock:
+            row = self._connection.execute("SELECT puuid FROM tft_accounts WHERE riot_id = ?", (riot_id,)).fetchone()
+        return row["puuid"] if row else None
+
+    def set_tft_puuid(self, riot_id: str, puuid: str) -> None:
+        with self._lock:
+            self._connection.execute(
+                "INSERT OR REPLACE INTO tft_accounts (riot_id, puuid, updated_at) VALUES (?, ?, ?)", (riot_id, puuid, _now()))
+            self._connection.commit()
+
+    def has_tft_matches(self) -> bool:
+        with self._lock:
+            return self._connection.execute("SELECT 1 FROM tft_matches LIMIT 1").fetchone() is not None
+
+    def tft_match(self, match_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._connection.execute("SELECT payload_json FROM tft_matches WHERE match_id = ?", (match_id,)).fetchone()
+        return json.loads(row["payload_json"]) if row else None
+
+    def upsert_tft_match(self, match: dict[str, Any]) -> None:
+        info = match["info"]
+        with self._lock:
+            self._connection.execute(
+                "INSERT OR REPLACE INTO tft_matches (match_id, queue_id, game_datetime, payload_json, collected_at)"
+                " VALUES (?, ?, ?, ?, ?)",
+                (match["metadata"]["match_id"], info.get("queue_id", 0), info.get("game_datetime", 0),
+                 json.dumps(match, ensure_ascii=False, separators=(",", ":")), _now()))
+            self._connection.commit()
+
+    def tft_rank(self, puuid: str) -> dict[str, Any] | None:
+        """지난 수집 때 저장한 랭크 (LP 변동 비교용)."""
+        with self._lock:
+            row = self._connection.execute("SELECT payload_json FROM tft_ranks WHERE puuid = ?", (puuid,)).fetchone()
+        return json.loads(row["payload_json"]) if row else None
+
+    def set_tft_rank(self, puuid: str, rank: dict[str, Any]) -> None:
+        with self._lock:
+            self._connection.execute("INSERT OR REPLACE INTO tft_ranks (puuid, payload_json, updated_at) VALUES (?, ?, ?)",
+                                     (puuid, json.dumps(rank, ensure_ascii=False), _now()))
             self._connection.commit()
 
     # ── API 사용량 ────────────────────────────────────

@@ -47,6 +47,10 @@ class Settings:
     riot_api_key: str | None = None
     discord_lol_thread_ids: tuple[str, ...] = ()
     lol_poll_interval_minutes: float = 15.0
+    # TFT는 Riot 키가 게임(제품)마다 따로라 RIOT_TFT_API_KEY. 없으면 RIOT_API_KEY (두 게임이 열린 키일 때)
+    riot_tft_api_key: str | None = None
+    discord_tft_thread_ids: tuple[str, ...] = ()
+    tft_poll_interval_minutes: float = 15.0
     # 게임별 리포트 thread: BOT_ENV에 맞는 하나 (dev=베타, prod=실제)
     discord_pubg_thread_ids: tuple[str, ...] = ()
 
@@ -82,4 +86,7 @@ def load_settings() -> Settings:
         discord_lol_thread_ids=tuple(thread for thread in (env(f"DISCORD_THREAD_LOL_{bot_env.upper()}"),) if thread),
         lol_poll_interval_minutes=float(env("LOL_POLL_INTERVAL_MINUTES", "15")),
         discord_pubg_thread_ids=tuple(thread for thread in (env(f"DISCORD_THREAD_PUBG_{bot_env.upper()}"),) if thread),
+        riot_tft_api_key=env("RIOT_TFT_API_KEY") or env("RIOT_API_KEY"),
+        discord_tft_thread_ids=tuple(thread for thread in (env(f"DISCORD_THREAD_TFT_{bot_env.upper()}"),) if thread),
+        tft_poll_interval_minutes=float(env("TFT_POLL_INTERVAL_MINUTES", "15")),
     )

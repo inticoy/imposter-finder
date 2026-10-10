@@ -1,4 +1,4 @@
-"""GitHub Actions용: 배그·FC·롤을 한 번씩 수집·리포트하고 끝낸다 (cron-job.org가 15분마다 workflow 실행).
+"""GitHub Actions용: 배그·FC·롤·TFT를 한 번씩 수집·리포트하고 끝낸다 (cron-job.org가 15분마다 workflow 실행).
 
 공개 레포라 Actions 로그도 공개된다. players.json의 이름·닉네임·디스코드 ID는 로그에서 가리고,
 건수·처리 결과·에러 내용만 남긴다.
@@ -17,6 +17,7 @@ from imposter_finder.config import Settings
 from imposter_finder.fc_collector import run_fc_cycle
 from imposter_finder.healthcheck import ping as ping_healthcheck
 from imposter_finder.lol_collector import run_lol_cycle
+from imposter_finder.tft_collector import run_tft_cycle
 from imposter_finder.storage import LocalStore
 
 MASK = "***"
@@ -79,7 +80,9 @@ def run_once(settings: Settings) -> int:
     store = LocalStore(settings.local_database_path)
     jobs = [("pubg", run_collection_cycle, store.has_matches, bool(settings.discord_pubg_thread_ids)),
             ("fc", run_fc_cycle, store.has_fc_matches, bool(settings.nexon_api_key and settings.discord_fc_thread_ids)),
-            ("lol", run_lol_cycle, store.has_lol_matches, bool(settings.riot_api_key and settings.discord_lol_thread_ids))]
+            ("lol", run_lol_cycle, store.has_lol_matches, bool(settings.riot_api_key and settings.discord_lol_thread_ids)),
+            ("tft", run_tft_cycle, store.has_tft_matches,
+             bool(settings.riot_tft_api_key and settings.discord_tft_thread_ids))]
     failed = False
     for name, cycle, has_data, enabled in jobs:
         if not enabled:

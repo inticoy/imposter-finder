@@ -19,10 +19,12 @@ cp players.example.json players.json    # 친구 목록 (커밋하지 않음)
 | `DISCORD_BOT_TOKEN` | Discord 봇 토큰 |
 | `DISCORD_THREAD_PUBG_DEV` / `_PROD` | 배그 리포트 thread |
 | `DISCORD_THREAD_LOL_DEV` / `_PROD` | 롤 리포트 thread |
+| `DISCORD_THREAD_TFT_DEV` / `_PROD` | TFT 리포트 thread |
 | `DISCORD_THREAD_FC_DEV` / `_PROD` | FC 리포트 thread |
 | `PUBG_API_KEY` | [PUBG Developer](https://developer.pubg.com) |
 | `PUBG_MAX_MATCH_AGE_HOURS` | 이보다 오래된 배그 경기는 알리지 않음 (기본 12) |
-| `RIOT_API_KEY` | [Riot Developer](https://developer.riotgames.com) 개인 키 (2분 100회) |
+| `RIOT_API_KEY` | [Riot Developer](https://developer.riotgames.com) 롤 개인 키 (2분 100회) |
+| `RIOT_TFT_API_KEY` | TFT 개인 키. Riot 키는 게임마다 따로라 롤 키로는 TFT가 403. 없으면 `RIOT_API_KEY`를 씀 |
 | `NEXON_API_KEY` | [NEXON Open API](https://openapi.nexon.com) (`test_` 키 하루 1,000회, 900회에서 멈춤) |
 | `GEMINI_API_KEY` | 총평·평가. 없으면 평가 없이 보냄 |
 | `HEALTHCHECK_IMPOSTER_FINDER_URL` | 선택: 실행마다 Healthchecks.io 핑, 한 게임이라도 실패하면 `/fail` |
