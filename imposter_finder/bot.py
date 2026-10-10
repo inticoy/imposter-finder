@@ -49,7 +49,8 @@ def run_discord_bot(settings: Settings, serve: bool = False) -> None:
             else:
                 await self.tree.sync()
             if serve and store:
-                self.collector_task = asyncio.create_task(_collection_loop(settings, store), name="pubg-collector")
+                if settings.discord_pubg_thread_ids:
+                    self.collector_task = asyncio.create_task(_collection_loop(settings, store), name="pubg-collector")
                 if settings.nexon_api_key and settings.discord_fc_thread_ids:
                     self.fc_task = asyncio.create_task(_fc_loop(settings, store), name="fc-collector")
                 if settings.riot_api_key and settings.discord_lol_thread_ids:

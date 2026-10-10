@@ -32,11 +32,8 @@ class Settings:
     bot_env: str
     pubg_api_key: str
     pubg_max_match_age_hours: float
-    seen_matches_path: Path
     players_path: Path
     discord_bot_token: str | None = None
-    discord_channel_id: str | None = None
-    discord_thread_id: str | None = None
     discord_guild_id: str | None = None
     local_database_path: Path = ROOT_DIR / "data" / "imposter_finder.db"
     pubg_poll_interval_minutes: float = 15.0
@@ -45,13 +42,12 @@ class Settings:
     nexon_daily_limit: int = 900
     gemini_api_key: str | None = None
     gemini_model: str = "gemini-3.5-flash-lite"
-    # FC 리포트는 BOT_ENV에 맞는 thread 하나로 보낸다
     discord_fc_thread_ids: tuple[str, ...] = ()
     fc_poll_interval_minutes: float = 15.0
     riot_api_key: str | None = None
     discord_lol_thread_ids: tuple[str, ...] = ()
     lol_poll_interval_minutes: float = 15.0
-    # 배그 이미지 리포트용 thread (봇이 만든 thread). 없으면 예전 글 리포트를 discord_thread_id로
+    # 게임별 리포트 thread: BOT_ENV에 맞는 하나 (dev=베타, prod=실제)
     discord_pubg_thread_ids: tuple[str, ...] = ()
 
 
@@ -66,18 +62,12 @@ def load_settings() -> Settings:
         raise RuntimeError("PUBG_API_KEY is required in .env")
     pubg_max_match_age_hours = float(env("PUBG_MAX_MATCH_AGE_HOURS", "12"))
 
-    channel_id = env("DISCORD_CHANNEL_ID") or env(f"DISCORD_CHANNEL_{bot_env.upper()}")
-    thread_id = env("DISCORD_THREAD_ID") or env(f"DISCORD_THREAD_{bot_env.upper()}")
-
     return Settings(
         bot_env=bot_env,
         pubg_api_key=pubg_api_key,
         pubg_max_match_age_hours=pubg_max_match_age_hours,
-        seen_matches_path=ROOT_DIR / "data" / "seen_matches.json",
         players_path=ROOT_DIR / "players.json",
         discord_bot_token=env("DISCORD_BOT_TOKEN"),
-        discord_channel_id=channel_id,
-        discord_thread_id=thread_id,
         discord_guild_id=env("DISCORD_GUILD_ID"),
         local_database_path=ROOT_DIR / env("LOCAL_DATABASE_PATH", "data/imposter_finder.db"),
         pubg_poll_interval_minutes=float(env("PUBG_POLL_INTERVAL_MINUTES", "15")),

@@ -43,47 +43,9 @@ class DiscordClient:
             raw = exc.read().decode("utf-8", errors="replace")
             raise DiscordError(f"Discord HTTP {exc.code}: {raw[:500]}") from exc
 
-    def get_channel(self, channel_id: str) -> dict:
-        payload = self._request_json("GET", f"https://discord.com/api/v10/channels/{channel_id}")
-        if not isinstance(payload, dict):
-            raise DiscordError("Discord channel lookup returned an empty response")
-        return payload
-
-    def send_report(self, channel_id: str, report: dict | str, thread_name: str) -> None:
-        payload = self._report_payload(report)
-        channel = self.get_channel(channel_id)
-        channel_type = channel.get("type")
-        if channel_type in {15, 16}:
-            self._request_json(
-                "POST",
-                f"https://discord.com/api/v10/channels/{channel_id}/threads",
-                {
-                    "name": thread_name[:100],
-                    "message": payload,
-                },
-            )
-            return
-
-        self._request_json(
-            "POST",
-            f"https://discord.com/api/v10/channels/{channel_id}/messages",
-            payload,
-        )
-
-    def send_message(self, channel_or_thread_id: str, report: dict | str) -> None:
-        self._request_json(
-            "POST",
-            f"https://discord.com/api/v10/channels/{channel_or_thread_id}/messages",
-            self._report_payload(report),
-        )
-
-    def _report_payload(self, report: dict | str) -> dict:
-        if isinstance(report, str):
-            return _silent({"content": report[:2000]})
-        payload = report.get("discord_payload")
-        if isinstance(payload, dict):
-            return _silent(payload)
-        return _silent({"content": str(report.get("message", ""))[:2000]})
+    def send_message(self, channel_id: str, payload: dict) -> None:
+        """파일 없는 메시지 (FC 몰수 경기 한 줄 등)."""
+        self._request_json("POST", f"https://discord.com/api/v10/channels/{channel_id}/messages", _silent(payload))
 
     def send_with_file(self, channel_id: str, payload: dict, filename: str, data: bytes,
                        content_type: str = "image/png") -> dict | None:

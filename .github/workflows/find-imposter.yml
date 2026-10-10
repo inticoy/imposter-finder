@@ -19,9 +19,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.14"
           cache: pip
@@ -31,7 +31,7 @@ jobs:
       # 상태(DB·FC 메타)는 매번 바뀌어 새 키로 저장하고 가장 최근 것을 복원한다.
       # 캐시가 사라져도 첫 실행은 기록만 하고 올리지 않아 중복 리포트는 없다
       - name: Restore state
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: |
             data/imposter_finder.db
@@ -42,7 +42,7 @@ jobs:
       # 이미지 캐시는 거의 그대로라 내용이 바뀔 때만 저장한다
       - name: Restore image cache
         id: assets
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: data/assets
           key: assets-
@@ -64,7 +64,7 @@ jobs:
 
       - name: Save state
         if: always()
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: |
             data/imposter_finder.db
@@ -73,7 +73,7 @@ jobs:
 
       - name: Save image cache
         if: always() && hashFiles('data/assets/**') != '' && steps.assets.outputs.cache-matched-key != format('assets-{0}', hashFiles('data/assets/**'))
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: data/assets
           key: assets-${{ hashFiles('data/assets/**') }}

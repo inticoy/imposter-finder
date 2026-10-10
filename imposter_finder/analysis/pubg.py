@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 import json
 from math import sqrt
 from pathlib import Path
@@ -53,12 +53,11 @@ def analyze_pubg_match(
     if not scores:
         return {
             "culprit": None,
-            "message": "[범인찾기] PUBG 매치 분석 실패\n등록된 친구가 match detail participant 목록에 없습니다.",
             "scores": {},
         }
 
-    match_meta = _match_meta(platform, match, ranked=None)
-    _score_match_stats(scores, match_meta["duration_minutes"])
+    duration = match.get("data", {}).get("attributes", {}).get("duration")
+    _score_match_stats(scores, float(duration) / 60 if duration is not None else None)
     _score_telemetry(scores, telemetry)
 
     for score in scores.values():
@@ -68,25 +67,14 @@ def analyze_pubg_match(
     lowest_rating = ranked[0].rating if ranked else 0
     culprits = [item for item in ranked if item.rating == lowest_rating]
     culprit = culprits[0] if culprits else None
-    match_meta = _match_meta(platform, match, ranked)
-    message = _format_report(platform, match, ranked, culprits)
-    embed = _format_embed(match_meta, ranked, culprits)
-
     return {
         "culprit": culprit.player.name if culprit else None,
-        "message": message,
-        "thread_name": _thread_name(match_meta, culprits),
-        "discord_payload": {
-            "content": "",
-            "embeds": [embed],
-        },
         "scores": {
             item.player.name: {
                 "pubg_name": item.pubg_name,
                 "rating": item.rating,
                 "reasons": item.reasons,
                 "tags": item.tags,
-                "stats": _compact_stats(item.stats),
                 "team_damage": round(item.team_damage),
                 "team_kills": item.team_kills,
             }
@@ -278,192 +266,6 @@ def _distance_m(a: tuple[float, float], b: tuple[float, float]) -> float:
     return sqrt((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2) / 100
 
 
-def _match_meta(platform: str, match: dict[str, Any], ranked: list[PlayerScore] | None) -> dict[str, Any]:
-    attrs = match.get("data", {}).get("attributes", {})
-    duration_seconds = attrs.get("duration")
-    duration_minutes = float(duration_seconds) / 60 if duration_seconds is not None else None
-    started_at = attrs.get("createdAt")
-    map_id = attrs.get("mapName") or "Unknown"
-    match_id = match.get("data", {}).get("id")
-
-    return {
-        "match_id": match_id,
-        "short_match_id": str(match_id or "")[:8],
-        "platform": platform,
-        "map_name": _pubg_map_name(map_id),
-        "map_id": map_id,
-        "game_mode": attrs.get("gameMode") or "Unknown",
-        "created_at": started_at,
-        "created_at_kst": _format_kst(started_at),
-        "duration_minutes": duration_minutes,
-        "duration_text": _format_minutes(duration_minutes),
-        "registered_count": len(ranked or []),
-    }
-
-
-def pubg_match_label(match: dict[str, Any]) -> str:
-    attrs = match.get("data", {}).get("attributes", {})
-    map_id = attrs.get("mapName") or "Unknown"
-    duration_seconds = attrs.get("duration")
-    duration_minutes = float(duration_seconds) / 60 if duration_seconds is not None else None
-    return (
-        f"{_pubg_map_name(map_id)} · {attrs.get('gameMode') or 'Unknown'} · "
-        f"{_format_minutes(duration_minutes)} · {_format_kst(attrs.get('createdAt'))}"
-    )
-
-
-def _format_embed(match_meta: dict[str, Any], ranked: list[PlayerScore], culprits: list[PlayerScore]) -> dict[str, Any]:
-    culprit = culprits[0] if culprits else None
-    rating = culprit.rating if culprit else 5.0
-    color = 0xE74C3C if rating <= 1.5 else 0xE67E22 if rating <= 2.5 else 0xF1C40F if rating <= 3.5 else 0x2ECC71
-
-    if culprit:
-        title_name = ", ".join(item.player.name for item in culprits)
-        summary_tags = _tag_summary(culprit)
-        description = f"**{culprit.player.name}** · **{culprit.rating:.1f}/5** {stars(culprit.rating)}\n{summary_tags}"
-    else:
-        title_name = "후보 없음"
-        description = "다들 무난했습니다."
-
-    fields = [
-        {
-            "name": "매치",
-            "value": (
-                f"{match_meta['map_name']} · {match_meta['game_mode']} · "
-                f"{match_meta['duration_text']} · #{match_meta['short_match_id']}\n"
-                f"{match_meta['created_at_kst']}"
-            ),
-            "inline": False,
-        },
-        {
-            "name": "친구별 요약",
-            "value": _embed_scoreboard_lines(ranked),
-            "inline": False,
-        },
-        {
-            "name": "한 줄 요약",
-            "value": _verdict(culprit),
-            "inline": False,
-        },
-    ]
-
-    return {
-        "title": f"🕵🏻‍♂️ PUBG 범인찾기 🔎 {title_name}",
-        "description": description,
-        "color": color,
-        "fields": fields,
-    }
-
-
-def _thread_name(match_meta: dict[str, Any], culprits: list[PlayerScore]) -> str:
-    if culprits:
-        names = ", ".join(item.player.name for item in culprits)
-        return f"🕵🏻‍♂️ PUBG 범인찾기 🔎 {names}"
-    return "🕵🏻‍♂️ PUBG 범인찾기 🔎 후보 없음"
-
-
-def _embed_scoreboard_lines(ranked: list[PlayerScore]) -> str:
-    lines = []
-    for item in ranked[:8]:
-        stats = _compact_stats(item.stats)
-        extras = []
-        if item.team_damage >= 30:
-            extras.append(f"팀딜 {round(item.team_damage)}")
-        if item.team_kills:
-            extras.append(f"팀킬 {item.team_kills}")
-        extra_text = f" · {' · '.join(extras)}" if extras else ""
-        lines.append(
-            f"**{item.player.name}** {item.rating:.1f} {stars(item.rating)} · "
-            f"`{stats['kills']}K/{stats['assists']}A` · `{stats['damageText']}` · "
-            f"`{stats['dbnoText']}` · `{stats['reviveText']}` · `{stats['survivalText']}`{extra_text}"
-        )
-    return _limit("\n".join(lines), 1000)
-
-
-def _tag_summary(item: PlayerScore) -> str:
-    tags = []
-    tag_labels = [
-        ("team_kill", "팀킬"),
-        ("team_damage", "팀딜"),
-        ("first_knock", "첫 기절"),
-        ("first_death", "첫 사망"),
-        ("zero_damage", "0딜"),
-        ("lowest_damage", "딜 최저"),
-        ("isolated_death", "고립 사망"),
-        ("short_survival", "빠른 퇴장"),
-        ("empty_presence", "존재감 없음"),
-        ("low_impact", "교전 기여 낮음"),
-        ("no_support", "팀플 없음"),
-    ]
-    for tag, label in tag_labels:
-        if tag in item.tags:
-            tags.append(label)
-    return " · ".join(tags[:4]) if tags else "이번 판 최저 평점"
-
-
-def _verdict(item: PlayerScore | None) -> str:
-    if item is None:
-        return "오늘은 딱히 잡아낼 사람이 없습니다."
-
-    tags = set(item.tags)
-    if "team_kill" in tags:
-        return "팀킬까지 했습니다. 이건 변명의 여지가 없습니다."
-    if "team_damage" in tags and "first_death" in tags:
-        return "팀원도 때리고 먼저 죽었습니다. 오늘은 확실히 문제였습니다."
-    if "team_damage" in tags:
-        return "적보다 팀원을 더 아프게 했습니다."
-    if {"first_knock", "first_death", "zero_damage"} <= tags:
-        return "첫 기절, 첫 사망, 0딜. 오늘은 그냥 짐짝이었습니다."
-    if {"first_knock", "first_death"} <= tags:
-        return "시작부터 먼저 누워서 팀 흐름을 끊었습니다."
-    if "isolated_death" in tags:
-        return "혼자 떨어져 죽고 팀 흐름까지 망쳤습니다."
-    if "zero_damage" in tags:
-        return "살아있는 시간은 있었는데 딜이 없습니다. 흔적이 없습니다."
-    if {"low_damage", "low_impact"} & tags:
-        return "교전 기여가 바닥입니다. 숫자가 변명을 못 합니다."
-    if "short_survival" in tags:
-        return "팀보다 먼저 사라졌습니다. 존재감도 같이 사라졌습니다."
-    if "no_support" in tags:
-        return "킬도 없고 부활도 없습니다. 팀플 흔적이 없습니다."
-    return "큰 사고는 없었지만, 이번 판 기여도는 제일 낮았습니다."
-
-
-def stars(rating: float) -> str:
-    filled = max(0, min(5, round(rating)))
-    return "⭐" * filled + "🫥" * (5 - filled)
-
-
-def _format_kst(raw: str | None) -> str:
-    if not raw:
-        return "알 수 없음"
-    try:
-        dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
-    except ValueError:
-        return raw
-    kst = dt.astimezone(timezone(timedelta(hours=9)))
-    weekdays = ["월", "화", "수", "목", "금", "토", "일"]
-    return f"{kst.month}/{kst.day}({weekdays[kst.weekday()]}) {kst:%H:%M}"
-
-
-def _format_minutes(minutes: float | None) -> str:
-    if minutes is None:
-        return "알 수 없음"
-    return f"{round(minutes)}분"
-
-
-def _format_short_minutes(minutes: float | None) -> str:
-    if minutes is None:
-        return "알 수 없음"
-    return f"{round(minutes)}분"
-
-
-def _limit(value: str, max_length: int) -> str:
-    if len(value) <= max_length:
-        return value
-    return value[: max_length - 1] + "…"
-
-
 def _pubg_map_name(map_id: str) -> str:
     maps = _load_pubg_maps()
     return maps.get(map_id, map_id)
@@ -475,80 +277,3 @@ def _load_pubg_maps() -> dict[str, str]:
         return {}
     with path.open("r", encoding="utf-8") as f:
         return json.load(f)
-
-
-def _format_report(
-    platform: str,
-    match: dict[str, Any],
-    ranked: list[PlayerScore],
-    culprits: list[PlayerScore],
-) -> str:
-    attrs = match.get("data", {}).get("attributes", {})
-    match_id = match.get("data", {}).get("id")
-    meta = _match_meta(platform, match, ranked)
-    title = f"🕵🏻‍♂️ PUBG 범인찾기 🔎 {', '.join(item.player.name for item in culprits) if culprits else '후보 없음'}"
-    lines = [
-        title,
-        "",
-        f"매치: {match_id}",
-        f"플랫폼: {platform}",
-        f"맵/모드: {meta['map_name']} / {attrs.get('gameMode')}",
-        f"시작: {meta['created_at_kst']}",
-        f"게임 시간: {meta['duration_text']}",
-        f"매치 ID: #{meta['short_match_id']}",
-        "",
-    ]
-
-    if culprits:
-        culprit_names = ", ".join(f"{item.player.name} ({item.pubg_name})" for item in culprits)
-        lines.append(f"{culprit_names} · {culprits[0].rating:.1f}/5 {stars(culprits[0].rating)}")
-        lines.append(_tag_summary(culprits[0]))
-    else:
-        lines.append("후보 없음")
-
-    lines.append("")
-    lines.append("친구별 요약:")
-    for item in ranked:
-        stats = _compact_stats(item.stats)
-        extras = []
-        if item.team_damage >= 30:
-            extras.append(f"팀딜 {round(item.team_damage)}")
-        if item.team_kills:
-            extras.append(f"팀킬 {item.team_kills}")
-        extra_text = f", {', '.join(extras)}" if extras else ""
-        lines.append(
-            "- "
-            f"{item.player.name} ({item.pubg_name}): "
-            f"{item.rating:.1f}/5 {stars(item.rating)}, "
-            f"{stats['kills']}K/{stats['assists']}A, {stats['damageText']}, "
-            f"{stats['dbnoText']}, {stats['reviveText']}, {stats['survivalText']}{extra_text}"
-        )
-
-    lines.append("")
-    lines.append("한 줄 요약:")
-    lines.append(_verdict(culprits[0] if culprits else None))
-    return "\n".join(lines)
-
-
-def _compact_stats(stats: dict[str, Any]) -> dict[str, Any]:
-    survived_minutes = float(stats.get("timeSurvived") or 0) / 60
-    kills = int(stats.get("kills") or 0)
-    damage = round(float(stats.get("damageDealt") or 0))
-    dbnos = int(stats.get("DBNOs") or 0)
-    assists = int(stats.get("assists") or 0)
-    revives = int(stats.get("revives") or 0)
-    return {
-        "kills": kills,
-        "damageDealt": damage,
-        "DBNOs": dbnos,
-        "assists": assists,
-        "revives": revives,
-        "damageText": f"{damage:>3}딜",
-        "dbnoText": f"{dbnos}기절",
-        "reviveText": f"{revives}부활",
-        "survivalText": f"{round(survived_minutes):>2}분",
-        "timeSurvivedMinutes": survived_minutes,
-        "timeSurvivedText": _format_minutes(survived_minutes),
-        "timeSurvivedShort": _format_short_minutes(survived_minutes),
-        "winPlace": stats.get("winPlace"),
-    }

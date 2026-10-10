@@ -5,6 +5,5 @@ players.json
 __pycache__/
 *.pyc
 logs/
-.venv-py39/
 data/fc_meta/
 data/assets/

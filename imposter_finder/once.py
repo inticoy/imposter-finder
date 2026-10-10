@@ -77,7 +77,7 @@ def run_once(settings: Settings) -> int:
     words = private_words(settings.players_path)
     sys.stdout, sys.stderr = Redacted(sys.stdout, words), Redacted(sys.stderr, words)
     store = LocalStore(settings.local_database_path)
-    jobs = [("pubg", run_collection_cycle, store.has_matches, True),
+    jobs = [("pubg", run_collection_cycle, store.has_matches, bool(settings.discord_pubg_thread_ids)),
             ("fc", run_fc_cycle, store.has_fc_matches, bool(settings.nexon_api_key and settings.discord_fc_thread_ids)),
             ("lol", run_lol_cycle, store.has_lol_matches, bool(settings.riot_api_key and settings.discord_lol_thread_ids))]
     failed = False

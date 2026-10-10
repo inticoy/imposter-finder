@@ -83,7 +83,7 @@ def run_fc_cycle(settings: Settings, store: LocalStore, notify: bool) -> dict[st
         if is_forfeit(match):
             payload = build_forfeit_report(match, head_to_head, friends)
             for thread_id in settings.discord_fc_thread_ids:
-                discord.send_message(thread_id, {"discord_payload": payload})
+                discord.send_message(thread_id, payload)
         else:
             payload, files = build_report(match, head_to_head, friends, _meta, _colors, settings.gemini_api_key,
                                           settings.gemini_model, _prices)

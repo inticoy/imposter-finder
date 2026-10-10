@@ -3,7 +3,6 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from imposter_finder.analysis.pubg import analyze_pubg_match
 from imposter_finder.analysis.pubg_report import build_report
 from imposter_finder.config import Settings
 from imposter_finder.discord import DiscordClient
@@ -55,23 +54,10 @@ def run_collection_cycle(settings: Settings, store: LocalStore, notify: bool) ->
 
         telemetry_url = _telemetry_url(match)
         telemetry = client.get_telemetry(telemetry_url) if telemetry_url else []
-        if settings.discord_pubg_thread_ids:
-            _send_image_report(settings, platform, match, telemetry, registered)
-        else:
-            _send_report(settings, analyze_pubg_match(platform, match, telemetry, registered), match_id)
+        _send_image_report(settings, platform, match, telemetry, registered)
         store.mark_notification_done(platform, match_id, "sent")
         published += 1
     return {"matches": len(fetched), "published": published}
-
-
-def _send_report(settings: Settings, report: dict[str, Any], match_id: str) -> None:
-    if not settings.discord_bot_token or not (settings.discord_thread_id or settings.discord_channel_id):
-        raise RuntimeError("Discord bot token and target channel/thread are required for local collection")
-    discord = DiscordClient(settings.discord_bot_token)
-    if settings.discord_thread_id:
-        discord.send_message(settings.discord_thread_id, report)
-    else:
-        discord.send_report(settings.discord_channel_id or "", report, report.get("thread_name") or f"🕵🏻‍♂️ PUBG 범인찾기 #{match_id[:8]}")
 
 
 def _send_image_report(settings: Settings, platform: str, match: dict[str, Any], telemetry: list[dict[str, Any]],
