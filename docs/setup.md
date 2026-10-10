@@ -104,8 +104,9 @@ gh cache list                                        # 상태·이미지 캐시
 
 ## README 예시 이미지
 
-실제 경기로 리포트를 만들되 이름·닉네임을 가명으로 바꿔 `docs/images/`에 저장합니다. 판독 문장은 화면에 출력되니 README에 붙입니다.
+실제 경기로 리포트를 만들되 이름·닉네임을 가명으로 바꾸고, 디스코드에 올라온 모습(봇 이름·멘션·색 띠 카드·총평/평가·버튼)으로 합성해 `docs/images/{pubg,lol,fc}`에 저장합니다. 리포트 원본은 `data/samples/`(커밋 안 함)에 남습니다.
 
 ```bash
 PYTHONPATH=. .venv/bin/python tools/readme_samples.py --pubg <match id> --lol <match id> --fc <match id>
+PYTHONPATH=. .venv/bin/python tools/readme_samples.py --compose-only   # API 호출 없이 합성만 다시
 ```

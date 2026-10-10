@@ -5,12 +5,14 @@
 
     PYTHONPATH=. .venv/bin/python tools/readme_samples.py --pubg <match id> --lol <match id> --fc <match id>
 
-결과: docs/images/{pubg,lol,fc}/ 이미지, 판독 문장은 화면에 출력 (README에 붙인다).
+결과: docs/images/{pubg,lol,fc}.(gif|png) — 디스코드에 올라온 모습 그대로 한 장 (tools/discord_mock.py).
+리포트 원본은 data/samples/에 두고, --compose-only면 API 호출 없이 그 원본으로 다시 합성만 한다.
 """
 from __future__ import annotations
 
 import argparse
 import json
+import sys
 import sqlite3
 from pathlib import Path
 from typing import Any
@@ -28,6 +30,9 @@ NAMES = ["철수", "영희", "길동", "미애", "민수", "지영", "동현", "
 ROMAN = ["Cheolsu", "Younghee", "Gildong", "Miae", "Minsu", "Jiyoung", "Donghyun", "Sujin", "Hyunwoo", "Seoyeon",
          "Junho", "Haneul"]
 OUT = ROOT_DIR / "docs" / "images"
+RAW = ROOT_DIR / "data" / "samples"  # 리포트 원본 (커밋 안 함)
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from discord_mock import render  # noqa: E402
 
 
 class Pseudonyms:
@@ -72,31 +77,41 @@ class Pseudonyms:
         return sum(w.casefold() in text for w in self.real if len(w) >= 2)
 
 
-def verdict(payload: dict) -> str:
-    def texts(components: list[dict]):
-        for c in components:
-            if c.get("type") == 10 and "**총평**" in c.get("content", ""):
-                yield c["content"]
-            yield from texts(c.get("components", []))
-    return next(texts(payload.get("components", [])), "")
-
-
-def save(game: str, files: list[tuple], payload: dict) -> None:
-    folder = OUT / game
+def save(game: str, files: list[tuple], payload: dict, mentions: list[str]) -> None:
+    folder = RAW / game
     folder.mkdir(parents=True, exist_ok=True)
     for old in folder.iterdir():
         old.unlink()
     for name, data, *_ in files:
         (folder / name).write_bytes(data)
-    print(f"── {game}: {', '.join(f[0] for f in files)}\n{verdict(payload)}\n")
+    (folder / "message.json").write_text(json.dumps({"files": [f[0] for f in files], "payload": payload,
+                                                    "mentions": mentions}, ensure_ascii=False, indent=1))
+    compose(game)
+
+
+def compose(game: str) -> None:
+    folder = RAW / game
+    message = json.loads((folder / "message.json").read_text())
+    files = [(name, (folder / name).read_bytes()) for name in message["files"]]
+    data, ext = render(files, message["payload"], message["mentions"])
+    OUT.mkdir(parents=True, exist_ok=True)
+    for old in OUT.glob(f"{game}.*"):
+        old.unlink()
+    (OUT / f"{game}.{ext}").write_bytes(data)
+    print(f"{game}.{ext} {len(data) / 2**20:.2f}MB")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--pubg", required=True)
-    parser.add_argument("--lol", required=True)
-    parser.add_argument("--fc", required=True)
+    parser.add_argument("--pubg")
+    parser.add_argument("--lol")
+    parser.add_argument("--fc")
+    parser.add_argument("--compose-only", action="store_true", help="data/samples의 원본으로 합성만")
     args = parser.parse_args()
+    if args.compose_only:
+        for game in ("pubg", "lol", "fc"):
+            compose(game)
+        return
     settings = load_settings()
     people = json.loads(settings.players_path.read_text(encoding="utf-8"))["players"]
     fake = Pseudonyms(people)
@@ -117,7 +132,7 @@ def main() -> None:
     match, telemetry = fake.apply(match), fake.apply(telemetry)
     payload, files = pubg_report.build_report("steam", match, telemetry, registered, key, model)
     assert not fake.leaks(match, payload), "배그: 실제 이름이 남음"
-    save("pubg", files, payload)
+    save("pubg", files, payload, [p.name for p in registered])
 
     # 롤
     match = load("lol_matches", args.lol)
@@ -131,7 +146,8 @@ def main() -> None:
     match, timeline = fake.apply(match), fake.apply(timeline)
     payload, files = lol_report.build_report(match, timeline, friends, _ddragon, key, model)
     assert not fake.leaks(match, payload), "롤: 실제 이름이 남음"
-    save("lol", files, payload)
+    save("lol", files, payload, list(dict.fromkeys(friends[p["puuid"]].name for p in match["info"]["participants"]
+                                                   if p["puuid"] in friends)))
 
     # FC
     match = load("fc_matches", args.fc)
@@ -147,7 +163,7 @@ def main() -> None:
     payload, files = fc_report.build_report(match, head_to_head, friends, meta, FcTeamColors(ROOT_DIR / "data" / "fc_meta"),
                                             key, model, FcPrices(ROOT_DIR / "data" / "fc_meta", meta))
     assert not fake.leaks(match, payload), "FC: 실제 이름이 남음"
-    save("fc", files, payload)
+    save("fc", files, payload, [friends[o].name for o in sides if o in friends])
 
 
 if __name__ == "__main__":
