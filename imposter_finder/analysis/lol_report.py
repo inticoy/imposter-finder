@@ -16,6 +16,7 @@ from imposter_finder.analysis.cards import (ALLY, BG, DEFEAT, ENEMY, GOLD, HIGHL
 from imposter_finder.games.lol import ARENA_QUEUES, QUEUE_NAMES, DDragon
 
 ACCENT_WIN, ACCENT_LOSE = 0x2ECC71, 0xED4245
+MAX_LINE_CHARS, MAX_TRIES = 52, 3  # 총평·평가 한 줄 길이 (넘으면 디스코드에서 줄이 바뀐다)
 AMBIENT_DIM = 0.85  # 흐린 원화 바탕을 얼마나 어둡게 (1이면 원화 없음)
 GOLD_PANEL = False  # 골드 그래프 뒤 반투명 판
 MINIMAP_ICONS = "https://raw.communitydragon.org/latest/game/assets/ux/minimap/icons"
@@ -410,9 +411,9 @@ def _evaluate(facts: dict, names: list[str], api_key: str | None, model: str) ->
     keys = ["summary"] + names
     prompt = ("리그 오브 레전드 경기 기록이야. 친구끼리 보는 디스코드 리포트에 넣을 한마디를 써줘. "
               "스탯은 이미 이미지로 보여주니까 숫자를 읊지 말고, 해설자나 코치처럼 느낌과 조언을 말해줘.\n"
-              "summary: 이 판을 한 문장으로 (60자 이내). 무엇이 승부를 갈랐는지, 아쉬운 점이나 다음 판에 해볼 것. "
+              "summary: 이 판을 한 문장으로 (50자 이내, 넘으면 안 됨). 무엇이 승부를 갈랐는지, 아쉬운 점이나 다음 판에 해볼 것. "
               "골드 흐름과 오브젝트 기록이 근거지만 숫자는 쓰지 마. 기록에 없는 장면(한타, 갱킹 등)을 지어내지 마.\n"
-              "각 선수 이름: 그 친구에게 하는 한마디 (60자 이내, 1~2문장, 이름으로 시작, 은/는 받침에 맞게). "
+              "각 선수 이름: 그 친구에게 하는 한마디 (45자 이내로 짧게, 넘으면 안 됨, 1~2문장, 이름으로 시작, 은/는 받침에 맞게). "
               "MVP는 무엇이 좋았는지 칭찬 (예: 기가 막히네요, 오늘 캐리했습니다), "
               "범인은 무엇이 아쉬웠는지와 다음에 해볼 것 (예: 다음 판엔 ~해보세요, ~에 신경 써보세요). "
               "판단은 기록(포지션, 데스, 시야, 딜량, 킬 관여 등)에 근거하고, 숫자는 꼭 필요할 때 하나만.\n"
@@ -428,12 +429,19 @@ def _evaluate(facts: dict, names: list[str], api_key: str | None, model: str) ->
         from google.genai import types
 
         client = genai.Client(api_key=api_key)  # 변수로 잡아둬야 호출 도중 연결이 닫히지 않는다
-        resp = client.models.generate_content(
-            model=model, contents=prompt,
-            config=types.GenerateContentConfig(response_mime_type="application/json", response_json_schema={
-                "type": "object", "properties": {k: {"type": "string"} for k in keys}, "required": keys}))
-        result = json.loads(resp.text)
-        return {"summary": result.get("summary", "").strip(), "lines": [result[n].strip() for n in names if result.get(n)]}
+        best, best_over = None, None
+        for _ in range(MAX_TRIES):  # 글자 수를 잘 못 지키니 길면 다시 받는다 (디스코드에서 한 줄로 보이게)
+            resp = client.models.generate_content(
+                model=model, contents=prompt,
+                config=types.GenerateContentConfig(response_mime_type="application/json", response_json_schema={
+                    "type": "object", "properties": {k: {"type": "string"} for k in keys}, "required": keys}))
+            result = {k: v.strip() for k, v in json.loads(resp.text).items() if isinstance(v, str)}
+            over = sum(max(len(result.get(k, "")) - MAX_LINE_CHARS, 0) for k in keys)
+            if best_over is None or over < best_over:
+                best, best_over = result, over
+            if not over:
+                break
+        return {"summary": best.get("summary", ""), "lines": [best[n] for n in names if best.get(n)]}
     except Exception as exc:
         print(f"[lol] gemini evaluation failed: {exc}")
         return {}
