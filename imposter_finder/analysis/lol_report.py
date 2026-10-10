@@ -16,6 +16,8 @@ from imposter_finder.analysis.cards import (ALLY, BG, DEFEAT, ENEMY, GOLD, HIGHL
 from imposter_finder.games.lol import ARENA_QUEUES, QUEUE_NAMES, DDragon
 
 ACCENT_WIN, ACCENT_LOSE = 0x2ECC71, 0xED4245
+AMBIENT_DIM = 0.7  # 흐린 원화 바탕을 얼마나 어둡게 (1이면 원화 없음)
+GOLD_PANEL = False  # 골드 그래프 뒤 반투명 판
 MINIMAP_ICONS = "https://raw.communitydragon.org/latest/game/assets/ux/minimap/icons"
 # 게임 안 미니맵 컬러 아이콘 (64px)
 OBJECTIVES = [("킬", "champion", "champion_dead"), ("포탑", "tower", "tower"), ("억제기", "inhibitor", "inhibitor"),
@@ -113,7 +115,7 @@ def render_players(columns: list[dict], rows: list[tuple], background: str | Non
     height = head_h + row_h * len(rows) + 12
     img, dr = canvas(height)
     col_w = WIDTH / (len(columns) + 1)
-    ambient_bg(img, background, (0, 0, round(col_w), height), dim=0.75)  # 라벨 칸: MVP 원화 색감
+    ambient_bg(img, background, (0, 0, round(col_w), height), dim=min(AMBIENT_DIM + 0.05, 1))  # 라벨 칸: MVP 원화 색감
     dr.text((24, 96), "선수 비교", font=font(22, 6), fill=WHITE)
     dr.text((24, 128), "점수 높은 순", font=font(15), fill=LABEL)
     for c, col in enumerate(columns):
@@ -150,7 +152,7 @@ def render_objectives(objectives: list[tuple], dragons: list[tuple[str, bool]], 
     """objectives: [(이름, 우리, 상대, 아이콘)], dragons: [(아이콘 URL, 우리 팀이 가져갔나)] 시간 순서."""
     height = 222 + (88 if dragons else 0)
     img, dr = canvas(height)
-    ambient_bg(img, background, focus_y=0.45)
+    ambient_bg(img, background, dim=AMBIENT_DIM, focus_y=0.45)
     top = header(dr, "오브젝트", [(ALLY, "우리 팀"), (ENEMY, "상대 팀")])
     cell = (WIDTH - PAD * 2) / len(objectives)
     for n, (label, ours, theirs, icon_url) in enumerate(objectives):
@@ -177,7 +179,7 @@ def render_gold(diffs: list[int], events: list[tuple[float, str, bool]], backgro
     """우리 팀 기준 골드 차이 곡선. events: [(분, 아이콘 URL, 우리 팀이 가져갔나)] 바론·드래곤 등."""
     height = 390
     img, dr = canvas(height)
-    ambient_bg(img, background, focus_y=0.75)
+    ambient_bg(img, background, dim=AMBIENT_DIM, focus_y=0.75)
     header(dr, "골드 차이", [(ALLY, "우리 팀 우세"), (ENEMY, "상대 우세")])
     gx0, gx1, gy0, gy1 = PAD + 62, WIDTH - PAD - 70, 124, height - 48
     mid, half = (gy0 + gy1) / 2, (gy1 - gy0) / 2
@@ -185,7 +187,8 @@ def render_gold(diffs: list[int], events: list[tuple[float, str, bool]], backgro
     last = max(len(diffs) - 1, 1)
     px = lambda minute: gx0 + (gx1 - gx0) * minute / last
     py = lambda d: mid - half * d / span
-    glass(img, (PAD, gy0 - 12, WIDTH - PAD, gy1 + 12), alpha=10)  # 선 대신 그래프 영역만 살짝 밝게
+    if GOLD_PANEL:  # 아이콘·시간까지 감싸야 어색하지 않다
+        glass(img, (PAD - 8, 70, WIDTH - PAD + 8, height - 8), alpha=10)
     for minute in range(0, len(diffs), 5):
         dr.text((px(minute), gy1 + 12), f"{minute}분", font=font(15), fill=LABEL, anchor="ma")
     dr.text((gx0 - 12, py(span)), f"+{span / 1000:.1f}k", font=font(15), fill=ALLY, anchor="rm")

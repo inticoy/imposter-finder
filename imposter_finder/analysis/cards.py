@@ -108,15 +108,25 @@ def bar(img: Image.Image, box: tuple, color: tuple, dim_side: str | None = "left
 
 
 def split_bar(img: Image.Image, x0: float, x1: float, y: float, left: float, right: float, height: int = 6) -> None:
-    """줄다리기 막대: 왼쪽 우리 팀, 오른쪽 상대. 앞선 쪽만 밝게, 가운데 눈금."""
-    bar(img, (x0, y, x1, y + height), TRACK, dim_side=None)
+    """줄다리기 막대: 왼쪽 우리 팀, 오른쪽 상대. 한 막대 안에서 틈 없이 맞닿고, 앞선 쪽만 밝게."""
+    x0, x1, y = round(x0), round(x1), round(y)
+    w = x1 - x0
     total = left + right
+    fill = Image.new("RGB", (w, height), TRACK)
     if total:
-        split = x0 + (x1 - x0) * left / total
-        if left:
-            bar(img, (x0, y, split - 2, y + height), ALLY if left >= right else shade(ALLY, 0.4), dim_side="left")
-        if right:
-            bar(img, (split + 2, y, x1, y + height), ENEMY if right >= left else shade(ENEMY, 0.4), dim_side="right")
+        split = round(w * left / total)
+        ramp = Image.linear_gradient("L").rotate(90).resize((w, height))  # 가운데(맞닿는 곳)가 밝게
+        lc = ALLY if left >= right else shade(ALLY, 0.4)
+        rc = ENEMY if right >= left else shade(ENEMY, 0.4)
+        ally = Image.composite(Image.new("RGB", (w, height), lc), Image.new("RGB", (w, height), shade(lc, 0.6)), ramp)
+        enemy = Image.composite(Image.new("RGB", (w, height), shade(rc, 0.6)), Image.new("RGB", (w, height), rc), ramp)
+        if split > 0:
+            fill.paste(ally.crop((0, 0, split, height)), (0, 0))
+        if split < w:
+            fill.paste(enemy.crop((split, 0, w, height)), (split, 0))
+    mask = Image.new("L", (w * SS, height * SS), 0)
+    ImageDraw.Draw(mask).rounded_rectangle((0, 0, w * SS - 1, height * SS - 1), radius=height * SS // 2, fill=255)
+    img.paste(fill, (x0, y), mask.resize((w, height), Image.LANCZOS))
     mid = (x0 + x1) / 2
     ImageDraw.Draw(img).line((mid, y - 4, mid, y + height + 3), fill=LABEL, width=1)
 
