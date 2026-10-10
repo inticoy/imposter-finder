@@ -37,25 +37,52 @@ class Friend:
 
 
 # ── 점수와 MVP·범인 ─────────────────────────────────────
-def _team_scores(team: list[dict], minutes: float) -> dict[str, dict]:
-    """팀 5명 안에서 항목별 순위를 매겨 합산한다 (딜 25, KDA 20, 킬 관여 15, 받은 피해·CS·시야·데스 각 10)."""
-    kills = sum(p["kills"] for p in team) or 1
-    stats = {p["puuid"]: {"kda": (p["kills"] + p["assists"]) / max(p["deaths"], 1),
-                          "kp": (p["kills"] + p["assists"]) / kills,
-                          "dmg": p["totalDamageDealtToChampions"],
-                          "taken": p["totalDamageTaken"] + p.get("damageSelfMitigated", 0) * 0.5,
-                          "cs": (p["totalMinionsKilled"] + p["neutralMinionsKilled"]) / minutes,
-                          "vision": p["visionScore"] / minutes,
-                          "deaths": -p["deaths"]} for p in team}
-    weights = {"kda": 0.2, "kp": 0.15, "dmg": 0.25, "taken": 0.1, "cs": 0.1, "vision": 0.1, "deaths": 0.1}
-    for pid in stats:
-        stats[pid]["score"] = 0.0
-    for key, weight in weights.items():
-        for rank, pid in enumerate(sorted(stats, key=lambda pid: stats[pid][key])):
-            stats[pid]["score"] += weight * rank / max(len(stats) - 1, 1)
-    for rank, pid in enumerate(sorted(stats, key=lambda pid: -stats[pid]["score"]), 1):
-        stats[pid]["rank"] = f"{rank}/{len(stats)}"
-    return stats
+# OP.GG OP 스코어처럼 10명 전체와 비교한다 (산식은 비공개라 같은 생각으로 직접 정함).
+# 공통 항목은 10명 중 순위, 포지션 항목은 같은 포지션 상대와 나눈 몫(반반이면 0.5)이라
+# 서포터가 CS·딜로, 원딜이 시야로 불리해지지 않는다. 포지션이 없으면(칼바람 등) 포지션 항목도 10명 중 순위.
+COMMON_WEIGHTS = {"kda": 0.2, "kp": 0.15, "deaths": 0.1}
+ROLE_WEIGHTS = {  # 합 0.55
+    "TOP": {"dmg": 0.2, "taken": 0.1, "cs": 0.1, "gold": 0.1, "vision": 0.05},
+    "JUNGLE": {"dmg": 0.15, "taken": 0.1, "cs": 0.05, "gold": 0.1, "vision": 0.1, "obj": 0.05},
+    "MIDDLE": {"dmg": 0.25, "taken": 0.05, "cs": 0.1, "gold": 0.1, "vision": 0.05},
+    "BOTTOM": {"dmg": 0.25, "cs": 0.15, "gold": 0.1, "vision": 0.05},
+    "UTILITY": {"dmg": 0.1, "taken": 0.1, "gold": 0.05, "vision": 0.3},
+    "": {"dmg": 0.25, "taken": 0.1, "cs": 0.1, "gold": 0.1},  # 포지션 없음
+}
+
+
+def _scores(participants: list[dict], minutes: float) -> dict[str, dict]:
+    """10명의 0~10점과 순위. 반환: puuid → {score, rank, kda, kp, cs, ...}."""
+    team_kills = {t: sum(p["kills"] for p in participants if p["teamId"] == t) or 1 for t in (100, 200)}
+    raw = {p["puuid"]: {"kda": (p["kills"] + p["assists"]) / max(p["deaths"], 1),
+                        "kp": (p["kills"] + p["assists"]) / team_kills[p["teamId"]],
+                        "deaths": -p["deaths"],
+                        "dmg": p["totalDamageDealtToChampions"],
+                        "taken": p["totalDamageTaken"] + p.get("damageSelfMitigated", 0) * 0.5,
+                        "cs": (p["totalMinionsKilled"] + p["neutralMinionsKilled"]) / minutes,
+                        "gold": p["goldEarned"],
+                        "vision": p["visionScore"] / minutes,
+                        "obj": p.get("damageDealtToObjectives", 0)} for p in participants}
+    n = len(participants)
+    percentile = lambda key, pid: sorted(raw, key=lambda q: raw[q][key]).index(pid) / max(n - 1, 1)
+    positions = [p.get("teamPosition") or "" for p in participants]
+    laned = all(positions) and len(set(positions)) == 5 and n == 10
+    for p in participants:
+        pid, role = p["puuid"], (p.get("teamPosition") or "") if laned else ""
+        opponent = next((q["puuid"] for q in participants if laned and q["teamId"] != p["teamId"]
+                         and q.get("teamPosition") == role), None)
+        score = sum(w * percentile(k, pid) for k, w in COMMON_WEIGHTS.items())
+        for key, weight in ROLE_WEIGHTS.get(role, ROLE_WEIGHTS[""]).items():
+            if opponent:
+                mine, theirs = raw[pid][key], raw[opponent][key]
+                share = mine / (mine + theirs) if mine + theirs > 0 else 0.5
+            else:
+                share = percentile(key, pid)
+            score += weight * share
+        raw[pid]["score"] = round(score * 10, 1)
+    for rank, pid in enumerate(sorted(raw, key=lambda q: -raw[q]["score"]), 1):
+        raw[pid]["rank"] = f"{rank}/{n}"
+    return raw
 
 
 # ── 이미지 ──────────────────────────────────────────────
@@ -325,7 +352,7 @@ def build_report(match: dict[str, Any], timeline: dict[str, Any] | None, friends
     minutes = info["gameDuration"] / 60
     won = mine[0]["win"]
     best_badge = "MVP" if won else "ACE"
-    stats = _team_scores(team, minutes)
+    stats = _scores(info["participants"], minutes)
     mvp = max(mine, key=lambda p: stats[p["puuid"]]["score"])
     culprit = min(mine, key=lambda p: stats[p["puuid"]]["score"]) if len(mine) > 1 else None
     name = lambda p: friends[p["puuid"]].name
@@ -385,7 +412,8 @@ def _player_fact(p: dict, name: str, role: str, stats: dict, ddragon: DDragon) -
             "KDA": f"{p['kills']}/{p['deaths']}/{p['assists']}", "딜량": p["totalDamageDealtToChampions"],
             "받은 피해": p["totalDamageTaken"], "킬 관여": f"{st['kp'] * 100:.0f}%", "분당 CS": round(st["cs"], 1),
             "시야 점수": p["visionScore"], "제어 와드": p.get("visionWardsBoughtInGame", 0),
-            "포탑 피해": p.get("damageDealtToBuildings", 0), "팀 안 종합 순위": st.get("rank")}
+            "포탑 피해": p.get("damageDealtToBuildings", 0), "점수(10점 만점)": st["score"],
+            "10명 중 순위": st["rank"]}
 
 
 def _build_arena(match: dict, friends: dict[str, Friend], ddragon: DDragon, key: str | None, model: str):
