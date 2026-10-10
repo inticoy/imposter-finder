@@ -34,7 +34,7 @@ h1{margin:0 0 6px;font-size:26px}
 .sum{margin:0 0 20px;color:var(--muted)}
 .cols,.game-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;align-items:start}
 .game-section{border:1px solid var(--line);border-top:4px solid var(--game);border-radius:16px;padding:18px;background:var(--card);margin-bottom:18px}
-.game-section.pubg{--game:#d3a42b}.game-section.fc{--game:#38a86f}.game-section.lol{--game:#598bd4}
+.game-section.pubg{--game:#d3a42b}.game-section.fc{--game:#38a86f}.game-section.lol{--game:#598bd4}.game-section.tft{--game:#c89b3c}
 .game-head{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin:0 0 14px}
 .game-head h2{font-size:20px;margin:0}.game-head p{font-size:13px;color:var(--muted);margin:0}
 .game-section .col{border-radius:11px;background:var(--bg);height:100%}
@@ -80,7 +80,7 @@ code{background:var(--neutral-bg);padding:1px 5px;border-radius:4px;font-size:.9
 <body>
 <main>
   <h1>범인찾기 동작 흐름</h1>
-  <p class="sum">cron-job.org가 15분마다 GitHub Actions <code>find-imposter.yml</code>을 실행하고, <code>collect</code>가 배그·FC·롤을 한 번씩 수집해 게임별 Discord 스레드에 이미지 리포트를 올립니다. PUBG <code>/user</code> 전적 감정서는 상주 실행(<code>serve</code>)일 때만 동작합니다. (2026-10-10)</p>
+  <p class="sum">cron-job.org가 15분마다 GitHub Actions <code>find-imposter.yml</code>을 실행하고, <code>collect</code>가 배그·롤·TFT·FC를 한 번씩 수집해 게임별 Discord 스레드에 이미지 리포트를 올립니다. PUBG <code>/user</code> 전적 감정서는 상주 실행(<code>serve</code>)일 때만 동작합니다. (2026-10-10)</p>
 
   <div class="legend">
     <span><i style="background:var(--neutral-bg);border-color:var(--neutral-bd)"></i>일반</span>
@@ -146,6 +146,56 @@ code{background:var(--neutral-bg);padding:1px 5px;border-radius:4px;font-size:.9
   </section>
 
   <div class="game-grid">
+  <section class="game-section lol">
+    <div class="game-head"><h2>⚔️ League of Legends</h2><p>사람 기준 친구 경기 · 여러 계정 지원</p></div>
+    <section class="col">
+      <h2>친구전 리포트</h2>
+      <p class="sub">15분마다 · <code>lol_collector.py</code></p>
+      <div class="flow">
+        <div class="node n-blue">계정마다 최근 10경기 ID<small>Riot API, 한 사람 여러 계정</small></div>
+        <div class="arrow"></div>
+        <div class="node">사람 기준 두 명 이상 = 친구전<small>부계정끼리는 제외, 모드 무관</small></div>
+        <div class="arrow"></div>
+        <div class="node n-dec">새 경기인가? (24시간 이내)</div>
+        <div class="arrow"></div>
+        <div class="branches">
+          <div class="br"><div class="lbl">아레나</div>
+            <div class="node">순위로 MVP/ACE·범인<small>배너·선수 2장</small></div></div>
+          <div class="br"><div class="lbl">협곡·칼바람 등</div>
+            <div class="node n-ai">10명 비교 점수 (포지션별 가중)<small>승리 시 MVP · 패배 시 ACE</small></div>
+            <div class="arrow"></div>
+            <div class="node">이미지 4장<small>결과·선수·오브젝트·골드 차이(GIF)</small></div></div>
+        </div>
+        <div class="arrow"></div>
+        <div class="node n-ai">Gemini 총평·평가</div>
+        <div class="arrow"></div>
+        <div class="node n-ok">롤 thread에 조용히<small>OP.GG 경기 전적 버튼</small></div>
+      </div>
+    </section>
+  </section>
+  <section class="game-section tft">
+    <div class="game-head"><h2>♟️ Teamfight Tactics</h2><p>사람 기준 친구 로비 · 개인전이라 범인 없음</p></div>
+    <section class="col">
+      <h2>친구 로비 리포트</h2>
+      <p class="sub">15분마다 · <code>tft_collector.py</code></p>
+      <div class="flow">
+        <div class="node n-blue">계정마다 최근 10판 TFT 경기 ID<small>Riot API (TFT 키), 롤 계정 그대로</small></div>
+        <div class="arrow"></div>
+        <div class="node">사람 기준 두 명 이상 = 친구 로비<small>부계정끼리는 제외</small></div>
+        <div class="arrow"></div>
+        <div class="node n-blue">친구 랭크 티어·LP<small>리그 API(kr), 1시간 안 저장값과 비교해 LP 변동</small></div>
+        <div class="arrow"></div>
+        <div class="node n-dec">새 로비인가? (24시간 이내)</div>
+        <div class="arrow"></div>
+        <div class="node">이미지 3장<small>요약(1등도) · 친구 덱(덱 이름·시너지·★·아이템) · 탈락 흐름(GIF)</small></div>
+        <div class="arrow"></div>
+        <div class="node n-ai">Gemini 총평 · 최고 등수 한마디</div>
+        <div class="arrow"></div>
+        <div class="node n-ok">TFT thread에 조용히<small>lolchess.gg 버튼</small></div>
+      </div>
+    </section>
+  </section>
+
   <section class="game-section fc">
     <div class="game-head"><h2>⚽ FC Online</h2><p>친구 간 클래식 1on1</p></div>
     <section class="col">
@@ -174,33 +224,6 @@ code{background:var(--neutral-bg);padding:1px 5px;border-radius:4px;font-size:.9
     </section>
   </section>
 
-  <section class="game-section lol">
-    <div class="game-head"><h2>⚔️ League of Legends</h2><p>사람 기준 친구 경기 · 여러 계정 지원</p></div>
-    <section class="col">
-      <h2>친구전 리포트</h2>
-      <p class="sub">15분마다 · <code>lol_collector.py</code></p>
-      <div class="flow">
-        <div class="node n-blue">계정마다 최근 10경기 ID<small>Riot API, 한 사람 여러 계정</small></div>
-        <div class="arrow"></div>
-        <div class="node">사람 기준 두 명 이상 = 친구전<small>부계정끼리는 제외, 모드 무관</small></div>
-        <div class="arrow"></div>
-        <div class="node n-dec">새 경기인가? (24시간 이내)</div>
-        <div class="arrow"></div>
-        <div class="branches">
-          <div class="br"><div class="lbl">아레나</div>
-            <div class="node">순위로 MVP/ACE·범인<small>배너·선수 2장</small></div></div>
-          <div class="br"><div class="lbl">협곡·칼바람 등</div>
-            <div class="node n-ai">10명 비교 점수 (포지션별 가중)<small>승리 시 MVP · 패배 시 ACE</small></div>
-            <div class="arrow"></div>
-            <div class="node">이미지 4장<small>결과·선수·오브젝트·골드 차이(GIF)</small></div></div>
-        </div>
-        <div class="arrow"></div>
-        <div class="node n-ai">Gemini 총평·평가</div>
-        <div class="arrow"></div>
-        <div class="node n-ok">롤 thread에 조용히<small>OP.GG 경기 전적 버튼</small></div>
-      </div>
-    </section>
-  </section>
   </div>
 
   <h3>쓰는 것</h3>
@@ -208,10 +231,10 @@ code{background:var(--neutral-bg);padding:1px 5px;border-radius:4px;font-size:.9
     <table>
       <tbody>
         <tr><th>실행</th><td>cron-job.org → GitHub Actions <code>find-imposter.yml</code> → <code>python -m imposter_finder collect</code> (15분마다, 한 번에 하나), Python 3.14. <code>/user</code>가 필요하면 <code>serve</code>로 상주 실행</td></tr>
-        <tr><th>게임 API</th><td>PUBG Developer API · NEXON Open API (FC, <code>test_</code> 키 하루 1,000회) · Riot API (개인 키 2분 100회) · FC 데이터센터·OP.GG 웹 (비공식)</td></tr>
+        <tr><th>게임 API</th><td>PUBG Developer API · NEXON Open API (FC, <code>test_</code> 키 하루 1,000회) · Riot API (롤·TFT 개인 키 따로, 2분 100회) · CommunityDragon (TFT·롤 아이콘) · FC 데이터센터·OP.GG 웹 (비공식)</td></tr>
         <tr><th>라우팅</th><td><code>BOT_ENV=prod</code> → 게임별 <code>DISCORD_THREAD_{PUBG,FC,LOL}_PROD</code>, dev → <code>_DEV</code>. thread가 비어 있는 게임은 수집하지 않음</td></tr>
         <tr><th>저장</th><td><code>data/imposter_finder.db</code>(PUBG·FC·롤 경기, 자동 알림 기록, API 사용량)·<code>data/fc_meta/</code>는 Actions 캐시에 매번, <code>data/assets/</code>(이미지 캐시)는 바뀔 때만. <code>players.json</code>·<code>.env</code>는 시크릿 — 모두 커밋 안 함</td></tr>
-        <tr><th>이미지</th><td>Pillow, 가로 1000px. 배그 경로·교전, 롤 골드 차이는 GIF(장면 0.42초, 마지막 1.8초). 글꼴은 레포의 Pretendard·Teko</td></tr>
+        <tr><th>이미지</th><td>Pillow, 가로 1000px. 배그 경로·교전, 롤 골드 차이, TFT 탈락 흐름은 GIF(장면 0.42초, 마지막 1.8초). 글꼴은 레포의 Pretendard·Teko</td></tr>
         <tr><th>AI</th><td>Gemini <code>gemini-3.5-flash-lite</code> — PUBG·FC·롤 총평·평가</td></tr>
         <tr><th>감시</th><td>실행마다 Healthchecks 핑, 한 게임이라도 실패하면 <code>/fail</code></td></tr>
         <tr><th>로그</th><td>Actions 실행 로그(공개) — 건수·에러만, 친구 이름·닉네임·ID는 <code>***</code></td></tr>
