@@ -15,7 +15,7 @@ from imposter_finder.analysis.cards import (ALLY, BG, DEFEAT, ENEMY, GOLD, HIGHL
                                             shade, split_bar)
 from imposter_finder.games.lol import ARENA_QUEUES, QUEUE_NAMES, DDragon, opgg_link
 
-ACCENT_WIN, ACCENT_LOSE = 0x2ECC71, 0xED4245
+ACCENT_WIN, ACCENT_LOSE = 0x0ACBE6, 0xFF2345  # 카드 왼쪽 색: 롤 클라이언트 승리·패배
 MAX_LINE_CHARS, MAX_TRIES = 52, 3  # 총평·평가 한 줄 길이 (넘으면 디스코드에서 줄이 바뀐다)
 AMBIENT_DIM = 0.85  # 흐린 원화 바탕을 얼마나 어둡게 (1이면 원화 없음)
 GOLD_PANEL = False  # 골드 그래프 뒤 반투명 판
@@ -78,7 +78,6 @@ def render_banner(won: bool, mode: str, minutes: int, background: str | None,
             pass
     color = VICTORY if won else DEFEAT
     cx = WIDTH // 2
-    dr.rectangle((0, 0, WIDTH, 5), fill=color)
 
     # 가운데: 승패 · 모드
     word = "승리" if won else "패배"

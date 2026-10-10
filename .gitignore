@@ -7,3 +7,4 @@ __pycache__/
 logs/
 .venv-py39/
 data/fc_meta/
+data/assets/

@@ -7,6 +7,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Callable
 
@@ -162,6 +163,73 @@ class FcTeamColors:
         return table[best] if counts[best] >= TEAMCOLOR_MIN_PLAYERS else None
 
 
+class FcPrices:
+    """선수 시세 (강화 단계별). 데이터센터 선수 검색 결과를 하루 동안 파일에 캐시한다."""
+
+    TTL_S = 24 * 3600
+
+    def __init__(self, cache_dir: Path, meta: "FcMeta") -> None:
+        self.path = cache_dir / "prices.json"
+        self.meta = meta
+        self._cache: dict[str, list] | None = None  # spid → [받은 시각, 강화별 가격 목록]
+
+    def _load(self) -> dict[str, list]:
+        if self._cache is None:
+            self._cache = json.loads(self.path.read_text(encoding="utf-8")) if self.path.exists() else {}
+        return self._cache
+
+    def price(self, spid: int, grade: int) -> int | None:
+        cache = self._load()
+        entry = cache.get(str(spid))
+        if entry is None or time.time() - entry[0] > self.TTL_S:
+            name = self.meta.player_name(spid)
+            url = f"https://fconline.nexon.com/DataCenter/SquadMakerPlayerList?strPlayerName={urllib.parse.quote(name)}"
+            req = urllib.request.Request(url, headers=BROWSER_HEADERS)
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                players = json.loads(resp.read().decode("utf-8")).get("players", [])
+            now = time.time()
+            for p in players:  # 같은 이름의 다른 시즌도 함께 저장해 다음 조회를 줄인다
+                cache[str(p["spid"])] = [now, [int(v.replace(",", "") or 0) for v in p["eachPrice"].split("|")]]
+            cache.setdefault(str(spid), [now, []])
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            self.path.write_text(json.dumps(cache), encoding="utf-8")
+            time.sleep(0.2)
+            entry = cache[str(spid)]
+        prices = entry[1]
+        return prices[grade] if 0 <= grade < len(prices) else None
+
+    def squad_value(self, players: list[dict[str, Any]]) -> int | None:
+        """출전 명단(선발+교체) 선수 가격 합. 하나라도 못 구하면 그 선수는 빼고 더한다."""
+        total, found = 0, 0
+        for p in players:
+            try:
+                value = self.price(p["spId"], p["spGrade"])
+            except Exception as exc:
+                print(f"[fc] price failed {p['spId']}: {exc}")
+                value = None
+            if value:
+                total, found = total + value, found + 1
+        return total if found else None
+
+
+def format_bp(value: int) -> str:
+    """FC 온라인처럼: 12조 3,400억 / 2억 3,600만."""
+    jo, rest = divmod(value, 10 ** 12)
+    eok, rest = divmod(rest, 10 ** 8)
+    man = rest // 10 ** 4
+    if jo:
+        return f"{jo:,}조 {eok:,}억" if eok else f"{jo:,}조"
+    if eok:
+        return f"{eok:,}억 {man:,}만" if man else f"{eok:,}억"
+    return f"{man:,}만"
+
+
+@lru_cache(maxsize=1024)
+def face_image(spid: int) -> str:
+    return f"{IMAGE_BASE}/players/p{spid % 1000000}.png"
+
+
+@lru_cache(maxsize=1024)
 def player_image(spid: int) -> str | None:
     """시즌 전용 이미지가 없는 선수가 있어, 있는 이미지를 순서대로 찾는다."""
     pid = spid % 1000000

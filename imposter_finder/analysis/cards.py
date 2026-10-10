@@ -1,9 +1,12 @@
 """리포트 이미지 공통 도구 (Pillow). 디스코드 카드 안에서 크게 보이도록 모든 이미지는 폭 1000, 가로로 길게."""
 from __future__ import annotations
 
+import hashlib
+import urllib.parse
 import urllib.request
 from functools import lru_cache
 from io import BytesIO
+from pathlib import Path
 
 from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 
@@ -35,10 +38,37 @@ def png(img: Image.Image) -> bytes:
     return out.getvalue()
 
 
+ASSET_DIR = Path(__file__).resolve().parents[2] / "data" / "assets"
+# 이미지 출처 → 게임 폴더 (data/assets/lol/..., data/assets/fc/...)
+GAME_OF_HOST = {"ddragon.leagueoflegends.com": "lol", "raw.communitydragon.org": "lol",
+                "fco.dn.nexoncdn.co.kr": "fc", "ssl.nexon.com": "fc"}
+
+
+def asset_path(url: str) -> Path:
+    """URL을 그대로 폴더 구조로: data/assets/{게임}/{호스트}/{경로}. 쿼리가 있으면 짧은 해시를 붙인다."""
+    parts = urllib.parse.urlsplit(url)
+    path = parts.path.lstrip("/") or "index"
+    if parts.query:
+        path += "_" + hashlib.sha1(parts.query.encode()).hexdigest()[:8]
+    return ASSET_DIR / GAME_OF_HOST.get(parts.netloc, "misc") / parts.netloc / path
+
+
 @lru_cache(maxsize=512)
 def _download(url: str) -> bytes:
+    """원화·아이콘·엠블럼은 잘 안 바뀌어 한 번 받으면 로컬에 둔다 (게임별 폴더)."""
+    path = asset_path(url)
+    if path.exists():
+        return path.read_bytes()
     req = urllib.request.Request(url, headers={"User-Agent": "imposter-finder/0.1"})
-    return urllib.request.urlopen(req, timeout=20).read()
+    data = urllib.request.urlopen(req, timeout=20).read()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(path.suffix + ".part")
+        tmp.write_bytes(data)
+        tmp.replace(path)
+    except OSError as exc:  # 디스크 문제여도 리포트는 그린다
+        print(f"[assets] cache write failed {path}: {exc}")
+    return data
 
 
 def icon(url: str | None, size: int, radius: int = 12) -> Image.Image | None:
