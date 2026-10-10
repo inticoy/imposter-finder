@@ -12,7 +12,7 @@
           "nickname": "FcOwnerNickA"
         },
         "lol": {
-          "riot_id": "GameNameA#KR1"
+          "riot_ids": ["GameNameA#KR1"]
         }
       }
     },
@@ -28,7 +28,7 @@
           "nickname": "FcOwnerNickB"
         },
         "lol": {
-          "riot_id": "GameNameB#TAG"
+          "riot_ids": ["GameNameB#TAG"]
         }
       }
     }
