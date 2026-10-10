@@ -10,7 +10,10 @@ from pathlib import Path
 
 from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 
-FONT = "/System/Library/Fonts/AppleSDGothicNeo.ttc"  # index 4 SemiBold, 6 Bold
+FONT_DIR = Path(__file__).resolve().parents[2] / "fonts"
+# 맥·리눅스(GitHub Actions)에서 같게: 레포의 Pretendard (OFL). 굵기 번호는 예전 Apple SD Gothic Neo 색인 그대로
+# 4·5 SemiBold → Medium, 6 Bold → SemiBold (Pretendard가 한 단계 굵다)
+FONT_FILES = {4: "Pretendard-Medium.otf", 5: "Pretendard-Medium.otf", 6: "Pretendard-SemiBold.otf"}
 WIDTH, PAD = 1000, 32
 # 롤 클라이언트 CSS 색 (rcp-fe-lol-match-history / postgame)
 BG, PANEL, TRACK, GRID = (1, 10, 19), (30, 35, 40), (60, 60, 65), (30, 40, 45)  # #010A13 #1E2328 #3C3C41 #1E282D
@@ -24,7 +27,7 @@ SS = 4  # 막대·그래프는 크게 그려 줄여서 가장자리를 매끄럽
 
 @lru_cache(maxsize=None)
 def font(size: int, weight: int = 4) -> ImageFont.FreeTypeFont:
-    return ImageFont.truetype(FONT, size, index=weight)
+    return ImageFont.truetype(str(FONT_DIR / FONT_FILES[weight]), size)
 
 
 def canvas(height: int) -> tuple[Image.Image, ImageDraw.ImageDraw]:

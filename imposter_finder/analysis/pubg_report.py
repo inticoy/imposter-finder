@@ -14,7 +14,7 @@ from typing import Any
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
-from imposter_finder.analysis.cards import FONT, GIF_MAX_BYTES, SS, WIDTH, _download, font, gif, png
+from imposter_finder.analysis.cards import FONT_DIR, GIF_MAX_BYTES, SS, WIDTH, _download, font, gif, png
 from imposter_finder.analysis.pubg import analyze_pubg_match, _pubg_map_name
 from imposter_finder.games.pubg_telemetry import (ASSETS, Story, build_story, map_image, weapon_icon_url,
                                                   weapon_name, zone_at)
@@ -29,7 +29,7 @@ BLUE_ZONE = (44, 92, 230)
 SQUAD = [(250, 206, 62), (70, 166, 245), (104, 206, 100), (230, 62, 50)]  # 노랑·파랑·초록·빨강
 ACCENT_WIN, ACCENT_LOSE = 0xF2A900, 0x5A5A5A  # 카드 왼쪽 색: 치킨이면 노랑
 MAX_LINE_CHARS, MAX_TRIES = 52, 3
-TEKO = "https://raw.githubusercontent.com/google/fonts/main/ofl/teko/Teko%5Bwght%5D.ttf"
+TEKO = FONT_DIR / "Teko-Variable.ttf"  # google/fonts ofl/teko (OFL)
 KILLFEED = f"{ASSETS}/Assets/Icons/Killfeed"
 MODES = {"squad": "스쿼드 TPP", "squad-fpp": "스쿼드 FPP", "duo": "듀오 TPP", "duo-fpp": "듀오 FPP",
          "solo": "솔로 TPP", "solo-fpp": "솔로 FPP", "tdm": "팀 데스매치"}
@@ -37,13 +37,10 @@ MODES = {"squad": "스쿼드 TPP", "squad-fpp": "스쿼드 FPP", "duo": "듀오 
 
 @lru_cache(maxsize=None)
 def teko(size: int, weight: int = 600) -> ImageFont.FreeTypeFont:
-    """배그 화면의 좁고 굵은 영문·숫자. 받지 못하면 기본 글꼴."""
-    try:
-        f = ImageFont.truetype(BytesIO(_download(TEKO)), size)
-        f.set_variation_by_axes([weight])
-        return f
-    except Exception:
-        return ImageFont.truetype(FONT, int(size * 0.8), index=6)
+    """배그 화면의 좁고 굵은 영문·숫자."""
+    f = ImageFont.truetype(str(TEKO), size)
+    f.set_variation_by_axes([weight])
+    return f
 
 
 @lru_cache(maxsize=64)

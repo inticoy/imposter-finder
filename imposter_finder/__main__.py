@@ -28,6 +28,7 @@ def main() -> int:
     pubg.add_argument("--ignore-age-limit", action="store_true", help="Include matches older than PUBG_MAX_MATCH_AGE_HOURS")
     subparsers.add_parser("bot", help="Run the local Discord slash-command bot")
     subparsers.add_parser("serve", help="Run the local Discord bot and 15-minute PUBG collector")
+    subparsers.add_parser("collect", help="Collect and report PUBG·FC·LoL once (GitHub Actions)")
 
     args = parser.parse_args()
     if args.command == "pubg":
@@ -46,6 +47,10 @@ def main() -> int:
 
         run_discord_bot(load_settings())
         return 0
+    if args.command == "collect":
+        from imposter_finder.once import run_once
+
+        return run_once(load_settings())
     if args.command == "serve":
         from imposter_finder.bot import run_discord_bot
 

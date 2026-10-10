@@ -1,0 +1,90 @@
+# 배그·FC·롤 친구전 리포트. cron-job.org가 15분마다 workflow_dispatch로 실행한다
+# (GitHub 자체 schedule은 늦거나 빠지고, 활동 없는 공개 레포에선 60일 뒤 꺼진다).
+name: find-imposter
+
+on:
+  workflow_dispatch:
+
+# 한 번에 하나만: 겹쳐 돌면 같은 경기를 두 번 올린다. 대기 중이던 실행은 다음 실행으로 대체된다
+concurrency:
+  group: find-imposter
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: write # 지난 상태 캐시 지우기
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      # 상태(DB·FC 메타)는 매번 바뀌어 새 키로 저장하고 가장 최근 것을 복원한다.
+      # 캐시가 사라져도 첫 실행은 기록만 하고 올리지 않아 중복 리포트는 없다
+      - name: Restore state
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            data/imposter_finder.db
+            data/fc_meta
+          key: state-${{ github.run_id }}
+          restore-keys: state-
+
+      # 이미지 캐시는 거의 그대로라 내용이 바뀔 때만 저장한다
+      - name: Restore image cache
+        id: assets
+        uses: actions/cache/restore@v4
+        with:
+          path: data/assets
+          key: assets-
+          restore-keys: assets-
+
+      - name: Write config
+        env:
+          ENV_FILE: ${{ secrets.ENV_FILE }}
+          PLAYERS_JSON: ${{ secrets.PLAYERS_JSON }}
+        run: |
+          printf '%s\n' "$ENV_FILE" > .env
+          printf '%s\n' "$PLAYERS_JSON" > players.json
+
+      - name: Collect and report
+        env:
+          BOT_ENV: prod
+          PYTHONUNBUFFERED: "1"
+        run: python -m imposter_finder collect
+
+      - name: Save state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            data/imposter_finder.db
+            data/fc_meta
+          key: state-${{ github.run_id }}
+
+      - name: Save image cache
+        if: always() && hashFiles('data/assets/**') != '' && steps.assets.outputs.cache-matched-key != format('assets-{0}', hashFiles('data/assets/**'))
+        uses: actions/cache/save@v4
+        with:
+          path: data/assets
+          key: assets-${{ hashFiles('data/assets/**') }}
+
+      # 캐시는 레포당 10GB: 최근 것만 남긴다
+      - name: Prune old caches
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for prefix in state- assets-; do
+            gh cache list --repo "$GITHUB_REPOSITORY" --key "$prefix" --sort created_at --order desc --limit 100 --json id --jq '.[2:][].id' |
+              xargs -r -n1 gh cache delete --repo "$GITHUB_REPOSITORY"
+          done

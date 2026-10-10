@@ -41,11 +41,22 @@ cp players.example.json players.json   # 친구 목록 (커밋 안 함)
 ## 실행
 
 ```bash
-.venv/bin/python -m imposter_finder serve   # 슬래시 명령 봇 + 15분 PUBG·FC·롤 수집 (운영)
+.venv/bin/python -m imposter_finder collect # PUBG·FC·롤을 한 번 수집·리포트하고 끝 (GitHub Actions)
+.venv/bin/python -m imposter_finder serve   # 슬래시 명령 봇 + 15분 PUBG·FC·롤 수집 (맥 상주)
 .venv/bin/python -m imposter_finder pubg --list-matches   # 지금 분석할 매치 후보만 보기
 BOT_ENV=dev .venv/bin/python -m imposter_finder pubg --include-seen --ignore-age-limit \
   --max-matches 1 --send-discord --no-save-state         # 예전 CLI 글 리포트 확인용; 운영 이미지 경로와 별개
 ```
+
+## 자동 실행 (GitHub Actions + cron-job.org)
+
+`.github/workflows/find-imposter.yml`: cron-job.org가 15분마다 `workflow_dispatch`로 부르면 `collect`를 한 번 돌립니다.
+
+- 시크릿: `ENV_FILE`(`.env` 내용 그대로), `PLAYERS_JSON`(`players.json` 내용). `BOT_ENV`는 workflow에서 `prod`로 고정
+- 상태: `data/imposter_finder.db`·`data/fc_meta/`는 매번 Actions 캐시에 저장하고 가장 최근 것을 복원, 이미지 캐시 `data/assets/`는 바뀔 때만 저장. 캐시가 사라지면 첫 실행은 기록만 하고 올리지 않습니다 (중복 방지)
+- 동시에 하나만 실행 (`concurrency`). 공개 레포라 로그도 공개: `players.json`의 이름·닉네임·ID는 `***`로 가리고 건수·에러만 남깁니다
+- 글꼴은 레포의 `fonts/` (Pretendard·Teko, OFL)라 맥과 리눅스 결과가 같습니다
+- 맥 `serve`와 동시에 켜면 같은 경기가 두 번 올라갑니다. 하나만 켭니다
 
 ## 자동 실행 (launchd)
 
