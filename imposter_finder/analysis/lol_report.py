@@ -161,7 +161,8 @@ def render_players(columns: list[dict], rows: list[tuple], background: str | Non
         if col["badge"]:
             dr.rounded_rectangle((cx - 31, 13, cx + 31, 75), radius=14, outline=color, width=3)
             pill(dr, cx, 114, col["badge"], color)
-        dr.text((cx, 84), col["name"], font=font(24, 6), fill=color, anchor="ma")
+        size = next((n for n in (24, 21, 18, 16) if dr.textlength(col["name"], font=font(n, 6)) <= col_w - 16), 14)  # 긴 닉네임
+        dr.text((cx, 84 + (24 - size) // 2), col["name"], font=font(size, 6), fill=color, anchor="ma")
         dr.text((cx, 146), col["champion"], font=font(17), fill=LABEL, anchor="ma")
         dr.text((cx, 170), col["kda"], font=font(20, 6), fill=WHITE, anchor="ma")
     for r, (label, values, fmt) in enumerate(rows):
@@ -358,7 +359,7 @@ def build_report(match: dict[str, Any], timeline: dict[str, Any] | None, friends
     name = lambda p: friends[p["puuid"]].name
 
     cols = sorted(mine, key=lambda p: -stats[p["puuid"]]["score"])
-    columns = [{"name": name(p), "champion": ddragon.champion_name(p["championName"]),
+    columns = [{"name": nickname(p), "champion": ddragon.champion_name(p["championName"]),
                 "icon_url": ddragon.champion_icon(p["championName"]),
                 "art_url": f"https://ddragon.leagueoflegends.com/cdn/img/champion/loading/{p['championName']}_0.jpg",
                 "kda": f"{p['kills']}/{p['deaths']}/{p['assists']}",
@@ -405,6 +406,11 @@ def build_report(match: dict[str, Any], timeline: dict[str, Any] | None, friends
 POSITIONS = {"TOP": "탑", "JUNGLE": "정글", "MIDDLE": "미드", "BOTTOM": "원딜", "UTILITY": "서포터"}
 
 
+def nickname(p: dict) -> str:
+    """이미지에는 게임 닉네임(Riot ID 앞부분), 판독 글에는 친구 이름 (배그·FC와 같게)."""
+    return p.get("riotIdGameName") or p.get("summonerName") or "?"
+
+
 def _player_fact(p: dict, name: str, role: str, stats: dict, ddragon: DDragon) -> dict:
     st = stats[p["puuid"]]
     return {"이름": name, "역할": role, "챔피언": ddragon.champion_name(p["championName"]),
@@ -425,7 +431,7 @@ def _build_arena(match: dict, friends: dict[str, Friend], ddragon: DDragon, key:
     mvp, culprit = ranked[0], (ranked[-1] if len(ranked) > 1 else None)
     best_badge = "MVP" if place(mvp) <= 4 else "ACE"
     name = lambda p: friends[p["puuid"]].name
-    columns = [{"name": name(p), "champion": ddragon.champion_name(p["championName"]),
+    columns = [{"name": nickname(p), "champion": ddragon.champion_name(p["championName"]),
                 "icon_url": ddragon.champion_icon(p["championName"]),
                 "kda": f"{p['kills']}/{p['deaths']}/{p['assists']}",
                 "badge": best_badge if p is mvp else "범인" if p is culprit else None} for p in ranked]
