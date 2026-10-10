@@ -5,13 +5,16 @@ import urllib.request
 from functools import lru_cache
 from io import BytesIO
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 FONT = "/System/Library/Fonts/AppleSDGothicNeo.ttc"  # index 4 SemiBold, 6 Bold
 WIDTH, PAD = 1000, 32
-BG, PANEL, TRACK = (43, 45, 49), (54, 57, 63), (64, 66, 73)
-GOLD, RED, GREEN, BLUE = (240, 178, 50), (237, 66, 69), (87, 242, 135), (88, 101, 242)
-LABEL, WHITE = (181, 186, 193), (255, 255, 255)
+# 중계 그래픽 톤: 짙은 남색 바탕, 우리 팀 민트 · 상대 코럴, 1등은 금색
+BG, PANEL, TRACK, GRID = (16, 20, 29), (24, 29, 41), (40, 46, 62), (31, 37, 51)
+GOLD, RED, GREEN = (245, 190, 75), (244, 86, 108), (54, 212, 156)
+SLATE = BLUE = (112, 128, 170)  # 1등이 아닌 막대
+LABEL, WHITE = (150, 160, 182), (240, 243, 248)
+SS = 4  # 막대·그래프는 크게 그려 줄여서 가장자리를 매끄럽게
 
 
 @lru_cache(maxsize=None)
@@ -82,18 +85,67 @@ def pill(draw: ImageDraw.ImageDraw, center_x: float, top: float, text: str, fill
     draw.text((center_x, top + 4), text, font=f, fill=BG, anchor="ma")
 
 
-def split_bar(draw: ImageDraw.ImageDraw, x0: float, x1: float, y: float, left: float, right: float,
-              left_color: tuple = GREEN, right_color: tuple = RED, height: int = 10) -> None:
-    """한 줄 막대를 두 값의 비율로 나눈다."""
-    draw.rounded_rectangle((x0, y, x1, y + height), radius=height // 2, fill=TRACK)
-    total = left + right
-    if not total:
+def bar(img: Image.Image, box: tuple, color: tuple, dim_side: str | None = "left") -> None:
+    """매끄러운 둥근 막대. dim_side 쪽이 어둡고 반대쪽이 밝은 가로 그라데이션."""
+    x0, y0, x1, y1 = (round(v) for v in box)
+    h = y1 - y0
+    x1 = max(x1, x0 + h)  # 아주 작은 값도 점 하나는 보이게
+    w = x1 - x0
+    if w <= 0 or h <= 0:
         return
-    split = x0 + (x1 - x0) * left / total
-    if left:
-        draw.rounded_rectangle((x0, y, max(split - 2, x0 + height), y + height), radius=height // 2, fill=left_color)
-    if right:
-        draw.rounded_rectangle((min(split + 2, x1 - height), y, x1, y + height), radius=height // 2, fill=right_color)
+    mask = Image.new("L", (w * SS, h * SS), 0)
+    ImageDraw.Draw(mask).rounded_rectangle((0, 0, w * SS - 1, h * SS - 1), radius=h * SS // 2, fill=255)
+    mask = mask.resize((w, h), Image.LANCZOS)
+    fill = Image.new("RGB", (w, h), color)
+    if dim_side:
+        ramp = Image.linear_gradient("L").rotate(90).resize((w, h))  # 왼쪽 0 → 오른쪽 255
+        if dim_side == "right":
+            ramp = ramp.transpose(Image.FLIP_LEFT_RIGHT)
+        fill = Image.composite(fill, Image.new("RGB", (w, h), shade(color, 0.45)), ramp)
+    img.paste(fill, (x0, y0), mask)
+
+
+def split_bar(img: Image.Image, x0: float, x1: float, y: float, left: float, right: float, height: int = 6) -> None:
+    """줄다리기 막대: 왼쪽 우리 팀, 오른쪽 상대. 앞선 쪽만 밝게, 가운데 눈금."""
+    bar(img, (x0, y, x1, y + height), TRACK, dim_side=None)
+    total = left + right
+    if total:
+        split = x0 + (x1 - x0) * left / total
+        if left:
+            bar(img, (x0, y, split - 2, y + height), GREEN if left >= right else shade(GREEN, 0.4), dim_side="left")
+        if right:
+            bar(img, (split + 2, y, x1, y + height), RED if right >= left else shade(RED, 0.4), dim_side="right")
+    mid = (x0 + x1) / 2
+    ImageDraw.Draw(img).line((mid, y - 4, mid, y + height + 3), fill=LABEL, width=1)
+
+
+def header(draw: ImageDraw.ImageDraw, title: str, legend: list[tuple[tuple, str]]) -> int:
+    """제목 · 오른쪽 범례 · 구분선. 내용이 시작할 y를 돌려준다."""
+    draw.text((PAD, 20), title, font=font(21, 6), fill=WHITE)
+    x = WIDTH - PAD
+    for color, text in reversed(legend):
+        x -= draw.textlength(text, font=font(15))
+        draw.text((x, 23), text, font=font(15), fill=LABEL)
+        x -= 18
+        draw.rounded_rectangle((x, 26, x + 11, 37), radius=3, fill=color)
+        x -= 20
+    draw.line((PAD, 58, WIDTH - PAD, 58), fill=GRID, width=1)
+    return 80
+
+
+def broadcast_bg(img: Image.Image) -> None:
+    """중계 그래픽 바탕: 왼쪽 우리 팀색 · 오른쪽 상대색 은은한 빛 + 옅은 사선 무늬."""
+    w, h = img.size
+    glow = Image.new("RGB", (w, h), BG)
+    g = ImageDraw.Draw(glow)
+    g.ellipse((-w * 0.3, -h * 0.6, w * 0.3, h * 1.6), fill=shade(GREEN, 0.13))
+    g.ellipse((w * 0.7, -h * 0.6, w * 1.3, h * 1.6), fill=shade(RED, 0.13))
+    glow = glow.filter(ImageFilter.GaussianBlur(min(w, h) * 0.45))
+    stripes = Image.new("L", (w, h), 0)
+    sd = ImageDraw.Draw(stripes)
+    for x in range(-h, w, 16):
+        sd.line((x, h, x + h, 0), fill=5, width=2)
+    img.paste(Image.composite(Image.new("RGB", (w, h), WHITE), glow, stripes))
 
 
 def grade_color(grade: int) -> tuple:
@@ -110,8 +162,9 @@ def grade_color(grade: int) -> tuple:
 
 
 def backdrop(img: Image.Image, url: str | None, box: tuple[int, int, int, int], dim: float = 0.78,
-             focus_y: float = 0.15) -> None:
-    """box 영역에 원화를 꽉 채워 깔고 배경색으로 어둡게 한다. focus_y는 세로 위치(0 위 ~ 1 아래)."""
+             focus_y: float = 0.15, fade: float = 0.0) -> None:
+    """box 영역에 원화를 꽉 채워 깔고 배경색으로 어둡게 한다. focus_y는 세로 위치(0 위 ~ 1 아래).
+    fade는 아래로 갈수록 더 어둡게 (글자가 많은 아래쪽을 읽기 쉽게)."""
     if not url:
         return
     try:
@@ -125,4 +178,8 @@ def backdrop(img: Image.Image, url: str | None, box: tuple[int, int, int, int], 
     left = (art.width - w) // 2
     top = int((art.height - h) * focus_y)
     art = art.crop((left, top, left + w, top + h))
-    img.paste(Image.blend(art, Image.new("RGB", (w, h), BG), dim), (x0, y0))
+    art = Image.blend(art, Image.new("RGB", (w, h), BG), dim)
+    if fade:
+        ramp = Image.linear_gradient("L").resize((w, h)).point(lambda v: int(v * fade))  # 위 0 → 아래 fade
+        art = Image.composite(Image.new("RGB", (w, h), BG), art, ramp)
+    img.paste(art, (x0, y0))
