@@ -14,7 +14,7 @@ from typing import Any
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
-from imposter_finder.analysis.cards import FONT, SS, WIDTH, _download, font, png
+from imposter_finder.analysis.cards import FONT, GIF_MAX_BYTES, SS, WIDTH, _download, font, gif, png
 from imposter_finder.analysis.pubg import analyze_pubg_match, _pubg_map_name
 from imposter_finder.games.pubg_telemetry import (ASSETS, Story, build_story, map_image, weapon_icon_url,
                                                   weapon_name, zone_at)
@@ -391,7 +391,12 @@ def _dashed(d: ImageDraw.ImageDraw, a: tuple, b: tuple, fill: tuple, width: int,
 
 
 def render_map(story: Story, colors: dict[str, tuple], map_ko: str) -> bytes:
+    return png(_route_image(story, colors, map_ko))
+
+
+def _route_image(story: Story, colors: dict[str, tuple], map_ko: str, elapsed: float | None = None) -> Image.Image:
     W, H = WIDTH, 560
+    until = story.team_end if elapsed is None else max(0, min(elapsed, story.team_end))
     box = _crop_box(story, W, H, _route_focus(story))
     base = _map_crop(story, box, W, H)
     base = Image.blend(base, Image.new("RGB", (W, H), BG), 0.28)
@@ -399,7 +404,7 @@ def render_map(story: Story, colors: dict[str, tuple], map_ko: str) -> bytes:
     P = lambda x, y: ((x - box[0]) * sx, (y - box[1]) * sy)
 
     # 우리 팀이 끝났을 때의 자기장: 파란 원 밖은 푸르게, 흰 원은 선으로
-    zone = zone_at(story, story.team_end)
+    zone = zone_at(story, until)
     if zone:
         (bx, by), br, (wx, wy), wr = zone
         tint = Image.new("L", (W * SS, H * SS), 46)
@@ -422,39 +427,57 @@ def render_map(story: Story, colors: dict[str, tuple], map_ko: str) -> bytes:
     for m in story.members:
         color = colors[m.name]
         end_t = m.death[0] if m.death else story.duration
-        pts = [(t, *P(x, y), car) for t, x, y, car in m.path if (not m.landing or t >= m.landing[0]) and t <= end_t]
-        if m.landing:
+        cutoff = min(until, end_t) if elapsed is not None else end_t
+        path = [(t, x, y, car) for t, x, y, car in m.path if (not m.landing or t >= m.landing[0]) and t <= end_t]
+        pts = [(t, *P(x, y), car) for t, x, y, car in path if t <= cutoff]
+        if elapsed is not None:
+            before = next((p for p in reversed(path) if p[0] <= cutoff), None)
+            after = next((p for p in path if p[0] > cutoff), None)
+            if before and after and before[0] < cutoff:
+                fraction = (cutoff - before[0]) / (after[0] - before[0])
+                x = before[1] + (after[1] - before[1]) * fraction
+                y = before[2] + (after[2] - before[2]) * fraction
+                pts.append((cutoff, *P(x, y), before[3]))
+        if m.landing and m.landing[0] <= cutoff:
             pts.insert(0, (m.landing[0], *P(*m.landing[1:]), False))
-        if m.death:
+        if m.death and m.death[0] <= cutoff:
             pts.append((m.death[0], *P(*m.death[1:]), False))
-        if m.jump and m.landing:  # 낙하산: 점선
-            _dashed(d, P(*m.jump[1:]), P(*m.landing[1:]), color + (200,), 2 * SS, 3 * SS, 5 * SS)
+        if m.jump and m.landing and m.jump[0] <= cutoff:  # 낙하산: 점선
+            fraction = min(1, (cutoff - m.jump[0]) / max(1, m.landing[0] - m.jump[0]))
+            target = tuple(a + (b - a) * fraction for a, b in zip(m.jump[1:], m.landing[1:]))
+            _dashed(d, P(*m.jump[1:]), P(*target), color + (200,), 2 * SS, 3 * SS, 5 * SS)
         for (_, x0, y0, car0), (_, x1, y1, car1) in zip(pts, pts[1:]):
             d.line((x0, y0, x1, y1), fill=(0, 0, 0, 120), width=7 * SS)
         for (_, x0, y0, car0), (_, x1, y1, car1) in zip(pts, pts[1:]):
             d.line((x0, y0, x1, y1), fill=color + ((150,) if car1 else (255,)), width=(3 if car1 else 4) * SS)
             d.ellipse((x1 - 2 * SS, y1 - 2 * SS, x1 + 2 * SS, y1 + 2 * SS), fill=color + (255,))
-        if m.landing:
+        if m.landing and m.landing[0] <= cutoff:
             lx, ly = P(*m.landing[1:])
             r = 8 * SS
             d.ellipse((lx - r, ly - r, lx + r, ly + r), fill=(0, 0, 0, 200), outline=color + (255,), width=3 * SS)
+        if elapsed is not None and pts and (not m.death or cutoff < m.death[0]):
+            _, x, y, _ = pts[-1]
+            r = 8 * SS
+            d.ellipse((x - r, y - r, x + r, y + r), fill=color + (255,), outline=(255, 255, 255, 255), width=2 * SS)
     _flatten(base, layer)
 
     # 처치·사망 표시는 킬피드 아이콘으로
     skull = _white(f"{KILLFEED}/Death.png", 18)
     for m in story.members:
         color = colors[m.name]
-        for k in m.kills:
+        for k in (k for k in m.kills if elapsed is None or k["t"] <= until):
             x, y = (v / SS for v in P(*k["xy"]))
             _icon_badge(base, skull, x, y, color)
-        if m.death:
+        if m.death and m.death[0] <= until:
             x, y = (v / SS for v in P(*m.death[1:]))
             _cross(base, x, y, color)
     # 제목·범례는 경로가 적은 모서리에
     marks = [(x / SS, y / SS) for m in story.members
              for _, x, y, _ in [(0, *P(px, py), 0) for _, px, py, _ in m.path] + [(0, *P(*k["xy"]), 0) for k in m.kills]]
     marks += [(x / SS, y / SS) for m in story.members if m.death for x, y in [P(*m.death[1:])]]
-    if zone and wr > 0:  # 흰 원 둘레
+    layout_zone = zone_at(story, story.team_end)
+    if layout_zone and layout_zone[3] > 0:  # 최종 자기장으로 제목·범례 위치를 고정
+        (wx, wy), wr = layout_zone[2], layout_zone[3]
         cx, cy = P(wx, wy)
         marks += [((cx + wr * sx * math.cos(a / 12 * math.pi)) / SS, (cy + wr * sy * math.sin(a / 12 * math.pi)) / SS)
                   for a in range(24)]
@@ -467,7 +490,10 @@ def render_map(story: Story, colors: dict[str, tuple], map_ko: str) -> bytes:
     d2.text((title[0] + 120, 42), map_ko, font=font(16, 4), fill=MUTED, anchor="lm")
     legend_x = min([20, W - 20 - legend_w], key=lambda x: busy((x, H - 46, x + legend_w, H - 16)))
     _legend(base, skull, legend_x)
-    return png(base)
+    if elapsed is not None:  # GIF 장면: 제목 반대쪽 모서리에 경기 시각
+        clock_x = W - 150 if title[0] == 20 else 20
+        _clock(base, clock_x, until)
+    return base
 
 
 def _icon_badge(img: Image.Image, icon: Image.Image | None, x: float, y: float, ring: tuple) -> None:
@@ -532,8 +558,17 @@ def _legend(img: Image.Image, skull: Image.Image | None, x: float) -> None:
         x += w
 
 
+def _clock(img: Image.Image, x: float, t: float) -> None:
+    _panel(img, (x, 13, x + 130, 61), radius=12, alpha=255)
+    ImageDraw.Draw(img).text((x + 65, 38), f"{int(t // 60):02d}:{int(t % 60):02d}", font=font(25, 6), fill=YELLOW, anchor="mm")
+
+
 # ── 4. 생존 타임라인 ─────────────────────────────────────
 def render_timeline(story: Story, colors: dict[str, tuple]) -> bytes:
+    return png(_timeline_image(story, colors))
+
+
+def _timeline_image(story: Story, colors: dict[str, tuple], elapsed: float | None = None) -> Image.Image:
     left, right, top, row_h = 210, 40, 104, 70
     H = top + row_h * len(story.members) + 50
     W = WIDTH
@@ -541,15 +576,17 @@ def render_timeline(story: Story, colors: dict[str, tuple]) -> bytes:
     d = ImageDraw.Draw(img)
     d.text((44, 38), "교전 흐름", font=font(22, 6), fill=TEXT, anchor="lm")
     end = min(story.duration, story.team_end + 40)
+    until = end if elapsed is None else max(0, min(elapsed, end))
     X = lambda t: left + (W - left - right) * min(max(t, 0), end) / end
     y_top, y_bot = top - 14, top + row_h * len(story.members) - 6
     # 자기장이 줄어드는 구간은 푸르게
     for n, (a, b) in enumerate(story.phases, 1):
-        if a >= end:
+        if a >= until:
             break
-        _panel(img, (X(a), y_top, X(min(b, end)), y_bot), radius=6, alpha=16, color=(255, 255, 255))
-        if X(min(b, end)) - X(a) > 26:
-            d.text(((X(a) + X(min(b, end))) / 2, y_top - 12), f"자기장 {n}", font=font(12, 4), fill=MUTED, anchor="mm")
+        phase_end = min(b, until)
+        _panel(img, (X(a), y_top, X(phase_end), y_bot), radius=6, alpha=16, color=(255, 255, 255))
+        if X(phase_end) - X(a) > 26:
+            d.text(((X(a) + X(phase_end)) / 2, y_top - 12), f"자기장 {n}", font=font(12, 4), fill=MUTED, anchor="mm")
     # 범례
     legend = [("기절시킴", "Groggy.png"), ("처치", "Death.png")]
     lx = W - right
@@ -571,27 +608,63 @@ def render_timeline(story: Story, colors: dict[str, tuple]) -> bytes:
         d.text((60, cy), m.name, font=font(size, 6), fill=TEXT if m.friend else MUTED, anchor="lm")
         land = m.landing[0] if m.landing else 0
         gone = m.death[0] if m.death else story.duration
-        _bar(img, (X(0), cy - 2, X(land), cy + 2), DIM)  # 비행기·낙하산
-        _bar(img, (X(land), cy - 5, X(gone), cy + 5), color)
+        if until > 0:
+            _bar(img, (X(0), cy - 2, X(min(land, until)), cy + 2), DIM)  # 비행기·낙하산
+        if until > land:
+            _bar(img, (X(land), cy - 5, X(min(gone, until)), cy + 5), color)
         # 기절해 있던 동안은 빨갛게
         for t_knock, *_ in m.knocked:  # 살려준 기록이 빠질 때가 있어 기절 시간은 최대 60초로 본다
+            if t_knock > until:
+                continue
             back = min([t for t in m.revived if t > t_knock] + [gone, t_knock + 60])
-            _bar(img, (X(t_knock), cy - 5, X(back), cy + 5), RED)
+            _bar(img, (X(t_knock), cy - 5, X(min(back, until)), cy + 5), RED)
         for events, ic, dy in (([k["t"] for k in m.kills], skull, -24), ([k["t"] for k in m.knocks], groggy, 18)):
             last_x = -99
             for t in sorted(events):
-                if not ic:
+                if not ic or t > until:
                     continue
                 x = max(X(t), last_x + ic.width + 2)
                 img.paste(ic, (round(x - ic.width / 2), round(cy + dy - ic.height / 2)), ic)
                 last_x = x
-        if m.death:
+        if m.death and m.death[0] <= until:
             _cross(img, X(gone), cy, color)
     # 분 눈금
     step = 60 if end < 8 * 60 else 120 if end < 15 * 60 else 300
     for t in range(0, int(end) + 1, step):
         d.text((X(t), H - 26), f"{t // 60}분", font=font(13, 4), fill=DIM, anchor="mm")
-    return png(img)
+    if elapsed is not None:  # GIF 장면: 재생 위치 막대와 경기 시각
+        x = X(until)
+        d.line((x, y_top - 6, x, y_bot + 6), fill=(0, 0, 0), width=5)
+        d.line((x, y_top - 6, x, y_bot + 6), fill=YELLOW, width=2)
+        _clock(img, 166, until)
+    return img
+
+
+# ── 경로·교전 흐름 GIF ───────────────────────────────────
+GIF_STEPS, GIF_EVENT_GAP = 32, 6  # 고르게 나눈 장면 수, 이보다 가까운 교전 장면은 합친다 (초)
+
+
+def _frame_times(story: Story) -> list[float]:
+    """GIF 장면 시각: 고르게 나눈 시각 + 착지·기절·처치·사망 순간 (짧은 교전도 장면에 잡히게)."""
+    end = story.team_end
+    times = [end * i / (GIF_STEPS - 1) for i in range(GIF_STEPS)]
+    events = []
+    for m in story.members:
+        events += [m.landing[0]] if m.landing else []
+        events += [k["t"] for k in m.kills + m.knocks] + [t for t, *_ in m.knocked]
+        events += [m.death[0]] if m.death else []
+    for t in sorted(t for t in events if 0 < t < end):
+        if min(abs(t - x) for x in times) >= GIF_EVENT_GAP:
+            times.append(t)
+    return sorted(times)
+
+
+def render_route_gifs(story: Story, colors: dict[str, tuple], map_ko: str) -> tuple[bytes, bytes]:
+    """이동 경로·교전 흐름 GIF. 두 GIF는 같은 장면 시각·같은 재생 시간표."""
+    times = _frame_times(story)
+    route = gif([_route_image(story, colors, map_ko, t) for t in times])
+    timeline = gif([_timeline_image(story, colors, t) for t in times])
+    return route, timeline
 
 
 # ── 5. 무기 ──────────────────────────────────────────────
@@ -705,8 +778,11 @@ def build_report(platform: str, match: dict[str, Any], telemetry: list[dict[str,
             ("이동", [round(distance(s)) for s in stats], lambda v: f"{v / 1000:.1f}km", True)]
     files.append(("squad.png", render_squad(cols, rows)))
     if story and any(m.path for m in story.members):
-        files.append(("route.png", render_map(story, colors, map_ko)))
-        files.append(("timeline.png", render_timeline(story, colors)))
+        route, timeline = render_route_gifs(story, colors, map_ko)
+        if len(route) + len(timeline) <= GIF_MAX_BYTES:
+            files += [("route.gif", route, "image/gif"), ("timeline.gif", timeline, "image/gif")]
+        else:
+            files += [("route.png", render_map(story, colors, map_ko)), ("timeline.png", render_timeline(story, colors))]
         if any(m.weapon_damage for m in story.members if m.friend):
             files.append(("weapons.png", render_weapons(story, colors)))
 
@@ -963,7 +1039,7 @@ def _fact(name: str, score: dict, participants: dict, story: Story | None, role:
 
 def _payload(players: list[PubgPlayer], place: int, files: list[tuple], ai: dict) -> dict:
     ids = list(dict.fromkeys(p.discord_user_id for p in players if p.discord_user_id))
-    components: list[dict] = [{"type": 12, "items": [{"media": {"url": f"attachment://{name}"}}]} for name, _ in files]
+    components: list[dict] = [{"type": 12, "items": [{"media": {"url": f"attachment://{name}"}}]} for name, *_ in files]
     words = []
     if ai.get("summary"):
         words.append(f"**총평**\n{ai['summary']}")

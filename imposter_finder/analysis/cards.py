@@ -38,6 +38,34 @@ def png(img: Image.Image) -> bytes:
     return out.getvalue()
 
 
+GIF_FRAME_MS, GIF_LAST_MS = 420, 1800  # 장면마다, 마지막 장면은 오래 멈춘다
+GIF_MAX_BYTES = 8 * 1024 * 1024  # 디스코드 기본 한도 10MiB보다 여유 있게. 넘으면 PNG로
+
+
+def gif(frames: list[Image.Image], dither: bool = False) -> bytes:
+    """모든 장면을 마지막 장면 팔레트 하나로: 바뀐 곳만 저장돼 작고, 배경 색이 장면마다 흔들리지 않는다.
+
+    dither: 흐린 원화·그라데이션처럼 부드러운 바탕은 255색이면 계단이 져서 점을 섞는다.
+    점은 바뀐 픽셀에서 오른쪽·아래로 번지므로, 앞 장면과 같은 픽셀은 앞 장면 값을 그대로 쓴다.
+    """
+    # 기본(MEDIANCUT)은 숲 초록이 회색으로, 흰 선이 노랑으로 뭉개져 탁해진다.
+    # 점을 섞을 땐 MAXCOVERAGE: FASTOCTREE는 어두운 바탕에 초록 점이 뭉친다
+    rgb = [f.convert("RGB") for f in frames]
+    method = Image.Quantize.MAXCOVERAGE if dither else Image.Quantize.FASTOCTREE
+    palette = rgb[-1].quantize(colors=255, method=method)
+    mode = Image.Dither.FLOYDSTEINBERG if dither else Image.Dither.NONE
+    frames = [f.quantize(palette=palette, dither=mode) for f in rgb]
+    if dither:
+        for i in range(1, len(frames)):
+            r, g, b = ImageChops.difference(rgb[i], rgb[i - 1]).split()
+            changed = ImageChops.lighter(ImageChops.lighter(r, g), b)
+            frames[i].paste(frames[i - 1], mask=changed.point(lambda v: 255 if v == 0 else 0))
+    out = BytesIO()
+    frames[0].save(out, "GIF", save_all=True, append_images=frames[1:], loop=0, optimize=True,
+                   duration=[GIF_FRAME_MS] * (len(frames) - 1) + [GIF_LAST_MS])
+    return out.getvalue()
+
+
 ASSET_DIR = Path(__file__).resolve().parents[2] / "data" / "assets"
 # 이미지 출처 → 게임 폴더 (data/assets/lol/..., data/assets/fc/...)
 GAME_OF_HOST = {"ddragon.leagueoflegends.com": "lol", "raw.communitydragon.org": "lol",

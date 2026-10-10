@@ -9,9 +9,9 @@ from io import BytesIO
 
 from PIL import Image, ImageChops, ImageDraw
 
-from imposter_finder.analysis.cards import (ALLY, BG, DEFEAT, ENEMY, GOLD, HIGHLIGHT, LABEL, PAD,
+from imposter_finder.analysis.cards import (ALLY, BG, DEFEAT, ENEMY, GIF_MAX_BYTES, GOLD, HIGHLIGHT, LABEL, PAD,
                                             SLATE, SS, TRACK, VICTORY, WHITE, WIDTH, _download, ambient_bg, backdrop,
-                                            bar, canvas, edge_shadow, font, glass, header, icon, medallion, pill, png,
+                                            bar, canvas, edge_shadow, font, gif, glass, header, icon, medallion, pill, png,
                                             shade, split_bar)
 from imposter_finder.games.lol import ARENA_QUEUES, QUEUE_NAMES, DDragon, opgg_link
 
@@ -179,6 +179,23 @@ def render_objectives(objectives: list[tuple], dragons: list[tuple[str, bool]], 
 
 def render_gold(diffs: list[int], events: list[tuple[float, str, bool]], background: str | None) -> bytes:
     """우리 팀 기준 골드 차이 곡선. events: [(분, 아이콘 URL, 우리 팀이 가져갔나)] 바론·드래곤 등."""
+    return png(_gold_image(diffs, events, background))
+
+
+GOLD_EVENT_GAP = 0.3  # 1분 장면과 이보다 가까운 오브젝트 장면은 합친다 (분)
+
+
+def render_gold_gif(diffs: list[int], events: list[tuple[float, str, bool]], background: str | None) -> bytes:
+    """골드 차이 GIF: 1분마다 + 오브젝트 순간 장면. 축은 경기 전체 기준이라 재생 중에 흔들리지 않는다."""
+    times = [float(m) for m in range(len(diffs))]
+    for minute, *_ in sorted(events):
+        if 0 < minute < times[-1] and min(abs(minute - t) for t in times) >= GOLD_EVENT_GAP:
+            times.append(minute)
+    return gif([_gold_image(diffs, events, background, t) for t in sorted(times)], dither=True)
+
+
+def _gold_image(diffs: list[int], events: list[tuple[float, str, bool]], background: str | None,
+                until: float | None = None) -> Image.Image:
     height = 390
     img, dr = canvas(height)
     ambient_bg(img, background, dim=AMBIENT_DIM, focus_y=0.75)
@@ -197,16 +214,27 @@ def render_gold(diffs: list[int], events: list[tuple[float, str, bool]], backgro
     dr.text((gx0 - 12, mid), "0", font=font(15), fill=LABEL, anchor="rm")
     dr.text((gx0 - 12, py(-span)), f"-{span / 1000:.1f}k", font=font(15), fill=ENEMY, anchor="rm")
 
-    # 오브젝트 시점: 위쪽 띠에 아이콘, 그래프에 옅은 세로선
+    # 오브젝트 시점: 위쪽 띠에 아이콘, 그래프에 옅은 세로선 (GIF 장면에선 그 시각이 지난 것만)
     slot = gx0 - 99.0
     for minute, url, ours in sorted(events):
         x = px(minute)
+        ix = max(x, slot + 30)  # 겹치면 오른쪽으로 민다
+        slot = ix
+        if until is not None and minute > until:
+            continue
         color = ALLY if ours else ENEMY
         for y in range(gy0 - 6, gy1, 6):  # 점선
             dr.line((x, y, x, y + 2), fill=shade(color, 0.45), width=1)
-        ix = max(x, slot + 30)  # 겹치면 오른쪽으로 민다
-        slot = ix
         medallion(img, ix, 94, 30, url, color)
+
+    if until is not None:  # GIF 장면: until분까지, 끝은 다음 분과 이어 그린다
+        whole = min(int(until), len(diffs) - 1)
+        shown = diffs[:whole + 1]
+        if whole < len(diffs) - 1 and until > whole:
+            shown.append(round(diffs[whole] + (diffs[whole + 1] - diffs[whole]) * (until - whole)))
+        px_full = px
+        px = lambda i: px_full(i if i <= whole else until)
+        diffs = shown
 
     # 곡선과 면: 크게 그려 줄인다
     layer = Image.new("RGBA", (WIDTH * SS, height * SS), (0, 0, 0, 0))
@@ -241,8 +269,9 @@ def render_gold(diffs: list[int], events: list[tuple[float, str, bool]], backgro
     img.paste(layer, (0, 0), layer)
     for x in range(gx0, gx1, 8):  # 0선은 점선
         dr.line((x, mid, x + 3, mid), fill=LABEL, width=1)
-    dr.text((gx1 + 14, ey / SS), f"{diffs[-1] / 1000:+.1f}k", font=font(17, 6), fill=side(diffs[-1]), anchor="lm")
-    return png(img)
+    dr.text((ex / SS + 14 if until is not None else gx1 + 14, ey / SS), f"{diffs[-1] / 1000:+.1f}k",
+            font=font(17, 6), fill=side(diffs[-1]), anchor="lm")
+    return img
 
 
 # ── 리포트 ──────────────────────────────────────────────
@@ -333,7 +362,10 @@ def build_report(match: dict[str, Any], timeline: dict[str, Any] | None, friends
                                                     splash))]
     diffs = _gold_diffs(info, timeline, team_id) if timeline else []
     if diffs:
-        files.append(("gold.png", render_gold(diffs, [(minute, url, ours) for minute, url, ours, _ in monsters], splash)))
+        events = [(minute, url, ours) for minute, url, ours, _ in monsters]
+        animated = render_gold_gif(diffs, events, splash)
+        files.append(("gold.gif", animated, "image/gif") if len(animated) <= GIF_MAX_BYTES
+                     else ("gold.png", render_gold(diffs, events, splash)))
 
     facts = {"결과": "승리" if won else "패배", "오브젝트(우리:상대)": {o[0]: f"{o[1]}:{o[2]}" for o in objectives},
              "골드 흐름(우리 팀 기준)": _gold_story(diffs) if diffs else "없음",
@@ -389,7 +421,7 @@ def _build_arena(match: dict, friends: dict[str, Friend], ddragon: DDragon, key:
 
 def _payload(mine: list, friends: dict, won: bool, files: list[tuple], ai: dict, link: str | None = None) -> dict:
     ids = list(dict.fromkeys(friends[p["puuid"]].discord_user_id for p in mine if friends[p["puuid"]].discord_user_id))
-    components: list[dict] = [{"type": 12, "items": [{"media": {"url": f"attachment://{name}"}}]} for name, _ in files]
+    components: list[dict] = [{"type": 12, "items": [{"media": {"url": f"attachment://{name}"}}]} for name, *_ in files]
     # 총평과 평가는 이미지 아래에 모은다
     words = []
     if ai.get("summary"):
