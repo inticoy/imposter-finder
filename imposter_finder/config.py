@@ -51,6 +51,8 @@ class Settings:
     riot_api_key: str | None = None
     discord_lol_thread_ids: tuple[str, ...] = ()
     lol_poll_interval_minutes: float = 15.0
+    # 배그 이미지 리포트용 thread (봇이 만든 thread). 없으면 예전 글 리포트를 discord_thread_id로
+    discord_pubg_thread_ids: tuple[str, ...] = ()
 
 
 def load_settings() -> Settings:
@@ -89,4 +91,5 @@ def load_settings() -> Settings:
         riot_api_key=env("RIOT_API_KEY"),
         discord_lol_thread_ids=tuple(thread for thread in (env(f"DISCORD_THREAD_LOL_{bot_env.upper()}"),) if thread),
         lol_poll_interval_minutes=float(env("LOL_POLL_INTERVAL_MINUTES", "15")),
+        discord_pubg_thread_ids=tuple(thread for thread in (env(f"DISCORD_THREAD_PUBG_{bot_env.upper()}"),) if thread),
     )

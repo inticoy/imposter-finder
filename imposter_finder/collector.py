@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from imposter_finder.analysis.pubg import analyze_pubg_match
+from imposter_finder.analysis.pubg_report import build_report
 from imposter_finder.config import Settings
 from imposter_finder.discord import DiscordClient
 from imposter_finder.games.pubg import PubgClient
@@ -54,8 +55,10 @@ def run_collection_cycle(settings: Settings, store: LocalStore, notify: bool) ->
 
         telemetry_url = _telemetry_url(match)
         telemetry = client.get_telemetry(telemetry_url) if telemetry_url else []
-        report = analyze_pubg_match(platform, match, telemetry, registered)
-        _send_report(settings, report, match_id)
+        if settings.discord_pubg_thread_ids:
+            _send_image_report(settings, platform, match, telemetry, registered)
+        else:
+            _send_report(settings, analyze_pubg_match(platform, match, telemetry, registered), match_id)
         store.mark_notification_done(platform, match_id, "sent")
         published += 1
     return {"matches": len(fetched), "published": published}
@@ -69,6 +72,15 @@ def _send_report(settings: Settings, report: dict[str, Any], match_id: str) -> N
         discord.send_message(settings.discord_thread_id, report)
     else:
         discord.send_report(settings.discord_channel_id or "", report, report.get("thread_name") or f"🕵🏻‍♂️ PUBG 범인찾기 #{match_id[:8]}")
+
+
+def _send_image_report(settings: Settings, platform: str, match: dict[str, Any], telemetry: list[dict[str, Any]],
+                       registered: list[PubgPlayer]) -> None:
+    """경기 분석 이미지(결과·스쿼드·경로·교전 흐름·무기) + 총평/평가."""
+    payload, files = build_report(platform, match, telemetry, registered, settings.gemini_api_key, settings.gemini_model)
+    discord = DiscordClient(settings.discord_bot_token or "")
+    for thread_id in settings.discord_pubg_thread_ids:
+        discord.send_with_files(thread_id, payload, files)
 
 
 def _registered_in_match(platform: str, match: dict[str, Any], players: list[PubgPlayer]) -> list[PubgPlayer]:

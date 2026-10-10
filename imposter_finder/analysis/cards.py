@@ -41,7 +41,8 @@ def png(img: Image.Image) -> bytes:
 ASSET_DIR = Path(__file__).resolve().parents[2] / "data" / "assets"
 # 이미지 출처 → 게임 폴더 (data/assets/lol/..., data/assets/fc/...)
 GAME_OF_HOST = {"ddragon.leagueoflegends.com": "lol", "raw.communitydragon.org": "lol",
-                "fco.dn.nexoncdn.co.kr": "fc", "ssl.nexon.com": "fc", "cdn.jsdelivr.net": "common"}
+                "fco.dn.nexoncdn.co.kr": "fc", "ssl.nexon.com": "fc", "cdn.jsdelivr.net": "common",
+                "raw.githubusercontent.com": "pubg", "media.githubusercontent.com": "pubg"}
 TWEMOJI = "https://cdn.jsdelivr.net/gh/jdecked/twemoji@15.1.0/assets/72x72"  # 디스코드가 쓰는 이모지 그림
 
 
