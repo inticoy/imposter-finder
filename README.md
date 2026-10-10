@@ -11,18 +11,11 @@
 
 > 디스코드에 실제로 올라오는 모습입니다 (누르면 크게). 실제 경기로 만들었고 이름과 닉네임만 가명으로 바꿨습니다 ([tools/readme_samples.py](tools/readme_samples.py)).
 
-<table>
-  <tr>
-    <th width="33%">🪂 배틀그라운드</th>
-    <th width="33%">⚔️ 리그 오브 레전드</th>
-    <th width="33%">⚽ FC 온라인</th>
-  </tr>
-  <tr>
-    <td width="33%" valign="top"><a href="docs/images/pubg.gif"><img src="docs/images/pubg.gif" width="300" alt="배그 리포트"></a></td>
-    <td width="33%" valign="top"><a href="docs/images/lol.gif"><img src="docs/images/lol.gif" width="300" alt="롤 리포트"></a></td>
-    <td width="33%" valign="top"><a href="docs/images/fc.png"><img src="docs/images/fc.png" width="300" alt="FC 리포트"></a></td>
-  </tr>
-</table>
+<p>
+  <a href="docs/images/pubg.gif"><img src="docs/images/pubg.gif" width="32%" alt="배틀그라운드 리포트"></a>
+  <a href="docs/images/lol.gif"><img src="docs/images/lol.gif" width="32%" alt="리그 오브 레전드 리포트"></a>
+  <a href="docs/images/fc.png"><img src="docs/images/fc.png" width="32%" alt="FC 온라인 리포트"></a>
+</p>
 
 - **배그**: 결과·순위 · 스쿼드 기록(MVP·범인) · 이동 경로 GIF · 교전 흐름 GIF · 쓴 무기 / 팀 데스매치는 라운드 결과·양 팀 비교
 - **롤**: 결과 · 선수 비교(MVP·ACE·범인) · 오브젝트 · 골드 차이 GIF · OP.GG 버튼 / 부계정도 사람 기준으로

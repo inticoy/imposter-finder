@@ -1,6 +1,7 @@
 """README용: 리포트 메시지를 디스코드에 올라온 모습처럼 한 장으로 (다크 테마, 2배 해상도).
 
-봇 이름 → 멘션 → 왼쪽 색 띠 컨테이너(이미지 갤러리 + 총평/평가 + 버튼). GIF가 있으면 같은 장면 수로 함께 움직인다.
+스레드 제목 → 봇 이름 → 멘션 → 왼쪽 색 띠 컨테이너(이미지 갤러리 + 총평/평가 + 버튼).
+GIF가 있으면 같은 장면 수로 함께 움직인다. README에 나란히 놓도록 높이를 맞출 수 있다(pad).
 """
 from __future__ import annotations
 
@@ -60,8 +61,9 @@ def _corner_mask(size: tuple[int, int], radius: int) -> Image.Image:
     return mask.resize(size, Image.LANCZOS)
 
 
-def render(files: list[tuple], payload: dict, mentions: list[str], time: str = "오늘 오후 9:41") -> tuple[bytes, str]:
-    """반환: (이미지, 확장자 gif|png)."""
+def render(files: list[tuple], payload: dict, mentions: list[str], channel: str,
+           time: str = "오늘 오후 9:41") -> list[Image.Image]:
+    """반환: 장면들 (정지 이미지면 1장)."""
     accent, text, button = _blocks(payload)
     media = [_frames(data) for _, data, *_ in files]
     count = max(len(m) for m in media)
@@ -78,12 +80,16 @@ def render(files: list[tuple], payload: dict, mentions: list[str], time: str = "
     line_h = 21 * S
     card_h = (PAD * S + sum(m[0].height for m in scaled) + GAP * S * (len(scaled) - 1)
               + (PAD * S + len(lines) * line_h if lines else 0) + (PAD * S + 32 * S if button else 0) + PAD * S)
-    top = 16 * S
+    bar = 48 * S  # 스레드 제목 줄
+    top = bar + 16 * S
     card_y = top + 22 * S + 8 * S + (26 * S if mentions else 0)
     height = card_y + card_h + 16 * S
 
     base = Image.new("RGB", (W * S, height), BG)
     d = ImageDraw.Draw(base)
+    d.text((16 * S, bar / 2), "#", font=_f(22), fill=MUTED, anchor="lm")
+    d.text((40 * S, bar / 2), channel, font=_f(16, True), fill=NAME, anchor="lm")
+    d.line((0, bar, W * S, bar), fill=(31, 32, 35), width=S)
     # 봇 프로필·이름·앱 배지·시각
     d.ellipse((16 * S, top, 56 * S, top + 40 * S), fill=(242, 169, 0))
     d.text((36 * S, top + 20 * S), "범", font=_f(18, True), fill=(20, 20, 20), anchor="mm")
@@ -130,7 +136,19 @@ def render(files: list[tuple], payload: dict, mentions: list[str], time: str = "
         for m, mask, slot in zip(scaled, masks, slots):
             frame.paste(m[min(i, len(m) - 1)], slot, mask)
         frames.append(frame)
-    if count == 1:
+    return frames
+
+
+def encode(frames: list[Image.Image], height: int | None = None) -> tuple[bytes, str]:
+    """height가 있으면 아래를 디스코드 배경색으로 채워 맞춘다. 반환: (이미지, gif|png)."""
+    if height and height > frames[0].height:
+        padded = []
+        for f in frames:
+            canvas = Image.new("RGB", (f.width, height), BG)
+            canvas.paste(f, (0, 0))
+            padded.append(canvas)
+        frames = padded
+    if len(frames) == 1:
         out = BytesIO()
         frames[0].save(out, "PNG", optimize=True)
         return out.getvalue(), "png"

@@ -31,8 +31,9 @@ ROMAN = ["Cheolsu", "Younghee", "Gildong", "Miae", "Minsu", "Jiyoung", "Donghyun
          "Junho", "Haneul"]
 OUT = ROOT_DIR / "docs" / "images"
 RAW = ROOT_DIR / "data" / "samples"  # 리포트 원본 (커밋 안 함)
+CHANNELS = {"pubg": "배틀그라운드", "lol": "리그 오브 레전드", "fc": "FC 온라인"}
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from discord_mock import render  # noqa: E402
+from discord_mock import encode, render  # noqa: E402
 
 
 class Pseudonyms:
@@ -86,19 +87,24 @@ def save(game: str, files: list[tuple], payload: dict, mentions: list[str]) -> N
         (folder / name).write_bytes(data)
     (folder / "message.json").write_text(json.dumps({"files": [f[0] for f in files], "payload": payload,
                                                     "mentions": mentions}, ensure_ascii=False, indent=1))
-    compose(game)
 
 
-def compose(game: str) -> None:
-    folder = RAW / game
-    message = json.loads((folder / "message.json").read_text())
-    files = [(name, (folder / name).read_bytes()) for name in message["files"]]
-    data, ext = render(files, message["payload"], message["mentions"])
+def compose_all() -> None:
+    """세 게임을 같은 높이로 맞춰 README에 나란히."""
+    frames = {}
+    for game in CHANNELS:
+        folder = RAW / game
+        message = json.loads((folder / "message.json").read_text())
+        files = [(name, (folder / name).read_bytes()) for name in message["files"]]
+        frames[game] = render(files, message["payload"], message["mentions"], CHANNELS[game])
+    height = max(f[0].height for f in frames.values())
     OUT.mkdir(parents=True, exist_ok=True)
-    for old in OUT.glob(f"{game}.*"):
-        old.unlink()
-    (OUT / f"{game}.{ext}").write_bytes(data)
-    print(f"{game}.{ext} {len(data) / 2**20:.2f}MB")
+    for game, game_frames in frames.items():
+        data, ext = encode(game_frames, height)
+        for old in OUT.glob(f"{game}.*"):
+            old.unlink()
+        (OUT / f"{game}.{ext}").write_bytes(data)
+        print(f"{game}.{ext} {len(data) / 2**20:.2f}MB")
 
 
 def main() -> None:
@@ -109,8 +115,7 @@ def main() -> None:
     parser.add_argument("--compose-only", action="store_true", help="data/samples의 원본으로 합성만")
     args = parser.parse_args()
     if args.compose_only:
-        for game in ("pubg", "lol", "fc"):
-            compose(game)
+        compose_all()
         return
     settings = load_settings()
     people = json.loads(settings.players_path.read_text(encoding="utf-8"))["players"]
@@ -164,6 +169,7 @@ def main() -> None:
                                             key, model, FcPrices(ROOT_DIR / "data" / "fc_meta", meta))
     assert not fake.leaks(match, payload), "FC: 실제 이름이 남음"
     save("fc", files, payload, [friends[o].name for o in sides if o in friends])
+    compose_all()
 
 
 if __name__ == "__main__":
