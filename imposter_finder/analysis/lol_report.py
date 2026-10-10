@@ -15,9 +15,14 @@ from imposter_finder.analysis.cards import (BG, BLUE, GOLD, GREEN, LABEL, PAD, R
 from imposter_finder.games.lol import ARENA_QUEUES, CDRAGON_ICONS, QUEUE_NAMES, DDragon
 
 ACCENT_WIN, ACCENT_LOSE = 0x2ECC71, 0xED4245
-OBJECTIVES = [("킬", "champion", "kills"), ("포탑", "tower", "tower-100"), ("억제기", "inhibitor", "inhibitor-100"),
-              ("드래곤", "dragon", "dragon-100"), ("바론", "baron", "baron-100"), ("전령", "riftHerald", "herald-100"),
-              ("공허 유충", "horde", "right_icons_grub")]
+MINIMAP_ICONS = "https://raw.communitydragon.org/latest/game/assets/ux/minimap/icons"
+# 게임 안 미니맵 컬러 아이콘 (64px)
+OBJECTIVES = [("킬", "champion", "champion_dead"), ("포탑", "tower", "tower"), ("억제기", "inhibitor", "inhibitor"),
+              ("드래곤", "dragon", "dragon"), ("바론", "baron", "baron"), ("전령", "riftHerald", "riftherald"),
+              ("공허 유충", "horde", "grub")]
+DRAGON_ICONS = {"FIRE_DRAGON": "dragon_infernal", "WATER_DRAGON": "dragon_ocean", "EARTH_DRAGON": "dragon_mountain",
+                "AIR_DRAGON": "dragon_cloud", "HEXTECH_DRAGON": "dragon_hextech", "CHEMTECH_DRAGON": "dragon_chemtech",
+                "ELDER_DRAGON": "dragon_elder"}
 
 
 @dataclass(frozen=True)
@@ -137,31 +142,44 @@ def render_players(columns: list[dict], rows: list[tuple]) -> bytes:
     return png(img)
 
 
-def render_objectives(objectives: list[tuple]) -> bytes:
+def render_objectives(objectives: list[tuple], dragons: list[tuple[str, bool]], background: str | None) -> bytes:
+    """objectives: [(이름, 우리, 상대, 아이콘)], dragons: [(아이콘 URL, 우리 팀이 가져갔나)] 시간 순서."""
     label_w = 130
-    img, dr = canvas(150)
-    dr.text((PAD, 64), "오브젝트", font=font(20), fill=LABEL)
+    height = 160 + (64 if dragons else 0)
+    img, dr = canvas(height)
+    backdrop(img, background, (0, 0, WIDTH, height), dim=0.9, focus_y=0.3)
+    dr.text((PAD, 66), "오브젝트", font=font(20), fill=LABEL)
     rw = dr.textlength("상대", font=font(16))
     dr.text((WIDTH - PAD, 12), "상대", font=font(16), fill=RED, anchor="ra")
     dr.text((WIDTH - PAD - rw - 6, 12), ":", font=font(16), fill=LABEL, anchor="ra")
     dr.text((WIDTH - PAD - rw - 18, 12), "우리 팀", font=font(16), fill=GREEN, anchor="ra")
-    cell = (WIDTH - PAD * 2 - label_w) // len(objectives)
+    cell = (WIDTH - PAD * 2 - label_w) / len(objectives)
     for n, (label, ours, theirs, icon_url) in enumerate(objectives):
-        cx = PAD + label_w + n * cell + cell // 2
-        ic = white_icon(icon_url, 34)
+        cx = int(PAD + label_w + n * cell + cell / 2)
+        ic = icon(icon_url, 38, radius=0)
         if ic:
-            img.paste(ic, (cx - 17, 34), ic)
-        dr.text((cx, 74), label, font=font(15), fill=LABEL, anchor="ma")
-        split_bar(dr, cx - cell // 2 + 14, cx + cell // 2 - 14, 100, ours, theirs, height=8)
-        dr.text((cx - 6, 114), str(ours), font=font(22, 6), fill=GREEN if ours > theirs else LABEL, anchor="ra")
-        dr.text((cx, 114), ":", font=font(22, 6), fill=LABEL, anchor="ma")
-        dr.text((cx + 6, 114), str(theirs), font=font(22, 6), fill=RED if theirs > ours else LABEL, anchor="la")
+            img.paste(ic, (cx - 19, 30), ic)
+        dr.text((cx, 76), label, font=font(15), fill=LABEL, anchor="ma")
+        split_bar(dr, cx - cell / 2 + 14, cx + cell / 2 - 14, 102, ours, theirs, height=8)
+        dr.text((cx - 6, 118), str(ours), font=font(22, 6), fill=GREEN if ours > theirs else LABEL, anchor="ra")
+        dr.text((cx, 118), ":", font=font(22, 6), fill=LABEL, anchor="ma")
+        dr.text((cx + 6, 118), str(theirs), font=font(22, 6), fill=RED if theirs > ours else LABEL, anchor="la")
+    if dragons:  # 드래곤 순서: 누가 어떤 드래곤을 먹었나
+        y = 168
+        dr.text((PAD, y + 12), "드래곤 순서", font=font(18), fill=LABEL)
+        for n, (url, ours) in enumerate(dragons):
+            x = PAD + label_w + n * 52
+            dr.rounded_rectangle((x - 3, y - 3, x + 43, y + 43), radius=10, outline=GREEN if ours else RED, width=3)
+            ic = icon(url, 40, radius=8)
+            if ic:
+                img.paste(ic, (x, y), ic)
     return png(img)
 
 
-def render_gold(diffs: list[int]) -> bytes:
+def render_gold(diffs: list[int], background: str | None) -> bytes:
     height = 340
     img, dr = canvas(height)
+    backdrop(img, background, (0, 0, WIDTH, height), dim=0.9, focus_y=0.7)
     dr.text((PAD, 14), "골드 차이", font=font(20), fill=LABEL)
     dr.text((WIDTH - PAD, 16), "▲ 우리 팀 우세   ▼ 상대 우세", font=font(16), fill=LABEL, anchor="ra")
     gx0, gx1, gy0, gy1 = PAD + 70, WIDTH - PAD - 16, 56, height - 56
@@ -195,6 +213,18 @@ def _gold_diffs(info: dict, timeline: dict, team_id: int) -> list[int]:
             gold[team_of[int(pid)]] += pf["totalGold"]
         diffs.append(gold[team_id] - gold[300 - team_id])
     return diffs
+
+
+def _dragon_order(timeline: dict | None, team_id: int) -> list[tuple[str, bool]]:
+    if not timeline:
+        return []
+    order = []
+    for frame in timeline["info"]["frames"]:
+        for event in frame["events"]:
+            if event.get("type") == "ELITE_MONSTER_KILL" and event.get("monsterType") == "DRAGON":
+                name = DRAGON_ICONS.get(event.get("monsterSubType", ""), "dragon")
+                order.append((f"{MINIMAP_ICONS}/{name}.png", event.get("killerTeamId") == team_id))
+    return order
 
 
 def _gold_story(d: list[int]) -> str:
@@ -236,7 +266,7 @@ def build_report(match: dict[str, Any], timeline: dict[str, Any] | None, friends
             ("시야 점수", [p["visionScore"] for p in cols], lambda v: f"{v}")]
     objectives_by_team = {t["teamId"]: t["objectives"] for t in info["teams"]}
     us, them = objectives_by_team[team_id], objectives_by_team[300 - team_id]
-    objectives = [(label, us.get(key, {}).get("kills", 0), them.get(key, {}).get("kills", 0), f"{CDRAGON_ICONS}/{ic}.png")
+    objectives = [(label, us.get(key, {}).get("kills", 0), them.get(key, {}).get("kills", 0), f"{MINIMAP_ICONS}/{ic}.png")
                   for label, key, ic in OBJECTIVES]
 
     queue = QUEUE_NAMES.get(info["queueId"], info.get("gameMode", ""))
@@ -249,10 +279,10 @@ def build_report(match: dict[str, Any], timeline: dict[str, Any] | None, friends
     files = [("result.png", render_banner(won, queue, int(minutes), splash,
                                           side_info(f"우리 팀 · 친구 {len(mine)}명", team), side_info("상대 팀", enemy))),
              ("players.png", render_players(columns, rows)),
-             ("objectives.png", render_objectives(objectives))]
+             ("objectives.png", render_objectives(objectives, _dragon_order(timeline, team_id), ddragon.map_image()))]
     diffs = _gold_diffs(info, timeline, team_id) if timeline else []
     if diffs:
-        files.append(("gold.png", render_gold(diffs)))
+        files.append(("gold.png", render_gold(diffs, ddragon.map_image())))
 
     facts = {"결과": "승리" if won else "패배", "오브젝트(우리:상대)": {o[0]: f"{o[1]}:{o[2]}" for o in objectives},
              "골드 흐름(우리 팀 기준)": _gold_story(diffs) if diffs else "없음",

@@ -79,6 +79,11 @@ class DDragon:
         self._refresh()
         return self.ko_names.get(champion_id, champion_id)
 
+    def map_image(self, map_id: int = 11) -> str:
+        """소환사의 협곡 지도 그림 (공식)."""
+        self._refresh()
+        return f"{DDRAGON}/cdn/{self.version}/img/map/map{map_id}.png"
+
     def champion_icon(self, champion_id: str) -> str:
         self._refresh()
         return f"{DDRAGON}/cdn/{self.version}/img/champion/{champion_id}.png"

@@ -44,8 +44,13 @@ def icon(url: str | None, size: int, radius: int = 12) -> Image.Image | None:
         im = Image.open(BytesIO(_download(url))).convert("RGBA")
     except Exception:
         return None
-    # 비율을 유지하며 정사각형에 맞춘다
-    im.thumbnail((size, size))
+    # 투명한 여백을 잘라내야 아이콘이 칸 크기만큼 보인다
+    bbox = im.getchannel("A").getbbox()
+    if bbox:
+        im = im.crop(bbox)
+    # 비율을 유지하며 정사각형에 맞춘다 (작은 아이콘도 키운다)
+    ratio = size / max(im.width, im.height)
+    im = im.resize((max(1, round(im.width * ratio)), max(1, round(im.height * ratio))), Image.LANCZOS)
     square = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     square.paste(im, ((size - im.width) // 2, (size - im.height) // 2), im)
     mask = Image.new("L", (size, size), 0)
