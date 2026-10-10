@@ -5,13 +5,12 @@ import urllib.request
 from functools import lru_cache
 from io import BytesIO
 
-from PIL import Image, ImageChops, ImageDraw, ImageFont
+from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 
 FONT = "/System/Library/Fonts/AppleSDGothicNeo.ttc"  # index 4 SemiBold, 6 Bold
 WIDTH, PAD = 1000, 32
 # 롤 클라이언트 CSS 색 (rcp-fe-lol-match-history / postgame)
 BG, PANEL, TRACK, GRID = (1, 10, 19), (30, 35, 40), (60, 60, 65), (30, 40, 45)  # #010A13 #1E2328 #3C3C41 #1E282D
-SKY_TOP, SKY_BOTTOM, FRAME = (28, 61, 98), (12, 27, 45), (73, 97, 125)  # 상세 화면 배경 #1C3D62→#0C1B2D, 테두리 #49617D
 ALLY, ENEMY = (71, 136, 182), (230, 33, 66)  # 상세 그래프 팀 색 #4788B6 #E62142
 VICTORY, DEFEAT = (10, 203, 230), (255, 35, 69)  # 전적 승리 #0ACBE6 · 패배 #FF2345
 GOLD, HIGHLIGHT, GOLD_DARK = (200, 155, 60), (250, 190, 10), (70, 55, 20)  # #C89B3C · 본인 강조 #FABE0A · #463714
@@ -132,18 +131,43 @@ def header(draw: ImageDraw.ImageDraw, title: str, legend: list[tuple[tuple, str]
         x -= 18
         draw.rounded_rectangle((x, 26, x + 11, 37), radius=3, fill=color)
         x -= 20
-    draw.line((PAD, 58, WIDTH - PAD, 58), fill=GOLD_DARK, width=1)
-    return 80
+    return 76
 
 
-def client_bg(img: Image.Image, box: tuple[int, int, int, int] | None = None) -> None:
-    """롤 클라이언트 경기 상세 화면 바탕: 위 #1C3D62 → 가운데부터 #0C1B2D, 테두리 #49617D."""
+def ambient_bg(img: Image.Image, url: str | None, box: tuple[int, int, int, int] | None = None, dim: float = 0.7,
+               focus_y: float = 0.3) -> None:
+    """원화를 크게 흐려 색감만 남긴 바탕. 위치가 달라도 어색하지 않다."""
     x0, y0, x1, y1 = box or (0, 0, *img.size)
     w, h = x1 - x0, y1 - y0
-    ramp = Image.linear_gradient("L").resize((w, h)).point(lambda v: min(255, int(v / 0.48)))  # 아래 52%는 진한 색
-    img.paste(Image.composite(Image.new("RGB", (w, h), SKY_BOTTOM), Image.new("RGB", (w, h), SKY_TOP), ramp), (x0, y0))
-    if box is None:
-        ImageDraw.Draw(img).rectangle((0, 0, w - 1, h - 1), outline=FRAME, width=1)
+    try:
+        art = Image.open(BytesIO(_download(url))).convert("RGB") if url else None
+    except Exception:
+        art = None
+    if art is None:
+        img.paste(Image.new("RGB", (w, h), BG), (x0, y0))
+        return
+    small = (max(w // 8, 1), max(h // 8, 1))  # 작게 줄여 흐리면 빠르고 더 부드럽다
+    scale = max(small[0] / art.width, small[1] / art.height)
+    art = art.resize((int(art.width * scale) + 1, int(art.height * scale) + 1), Image.LANCZOS)
+    left, top = (art.width - small[0]) // 2, int((art.height - small[1]) * focus_y)
+    art = art.crop((left, top, left + small[0], top + small[1])).filter(ImageFilter.GaussianBlur(4))
+    art = art.resize((w, h), Image.BICUBIC)
+    img.paste(Image.blend(art, Image.new("RGB", (w, h), BG), dim), (x0, y0))
+
+
+def glass(img: Image.Image, box: tuple, radius: int = 16, alpha: int = 16) -> None:
+    """반투명 둥근 판 (선 없이 영역을 나눈다)."""
+    x0, y0, x1, y1 = (round(v) for v in box)
+    w, h = x1 - x0, y1 - y0
+    mask = Image.new("L", (w * SS, h * SS), 0)
+    ImageDraw.Draw(mask).rounded_rectangle((0, 0, w * SS - 1, h * SS - 1), radius=radius * SS, fill=alpha)
+    img.paste(Image.new("RGB", (w, h), WHITE), (x0, y0), mask.resize((w, h), Image.LANCZOS))
+
+
+def edge_shadow(img: Image.Image, x: int, height: int, width: int = 18, strength: int = 150) -> None:
+    """세로 경계 x 오른쪽으로 부드러운 그늘 (선 대신 칸을 나눈다)."""
+    ramp = Image.linear_gradient("L").rotate(90).resize((width, height)).point(lambda v: int((255 - v) * strength / 255))
+    img.paste(Image.new("RGB", (width, height), BG), (x, 0), ramp)
 
 
 def medallion(img: Image.Image, cx: float, cy: float, d: int, url: str | None, ring: tuple,

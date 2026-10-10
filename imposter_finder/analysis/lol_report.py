@@ -9,10 +9,10 @@ from io import BytesIO
 
 from PIL import Image, ImageChops, ImageDraw
 
-from imposter_finder.analysis.cards import (ALLY, BG, DEFEAT, ENEMY, GOLD, GOLD_DARK, GRID, HIGHLIGHT, LABEL, PAD,
-                                            SLATE, SS, TRACK, VICTORY, WHITE, WIDTH, _download, backdrop, bar,
-                                            client_bg, canvas, font, header, icon, medallion, pill, png, shade,
-                                            split_bar)
+from imposter_finder.analysis.cards import (ALLY, BG, DEFEAT, ENEMY, GOLD, HIGHLIGHT, LABEL, PAD,
+                                            SLATE, SS, TRACK, VICTORY, WHITE, WIDTH, _download, ambient_bg, backdrop,
+                                            bar, canvas, edge_shadow, font, glass, header, icon, medallion, pill, png,
+                                            shade, split_bar)
 from imposter_finder.games.lol import ARENA_QUEUES, QUEUE_NAMES, DDragon
 
 ACCENT_WIN, ACCENT_LOSE = 0x2ECC71, 0xED4245
@@ -107,21 +107,20 @@ def render_banner(won: bool, mode: str, minutes: int, background: str | None,
     return png(img)
 
 
-def render_players(columns: list[dict], rows: list[tuple]) -> bytes:
+def render_players(columns: list[dict], rows: list[tuple], background: str | None) -> bytes:
     """라벨 칸 + 친구 칸을 같은 폭으로. 친구 칸마다 챔피언 로딩 원화."""
     head_h, row_h = 200, 54
     height = head_h + row_h * len(rows) + 12
     img, dr = canvas(height)
     col_w = WIDTH / (len(columns) + 1)
-    client_bg(img, (0, 0, round(col_w), height))  # 라벨 칸: 클라이언트 상세 화면 바탕
+    ambient_bg(img, background, (0, 0, round(col_w), height), dim=0.75)  # 라벨 칸: MVP 원화 색감
     dr.text((24, 96), "선수 비교", font=font(22, 6), fill=WHITE)
     dr.text((24, 128), "점수 높은 순", font=font(15), fill=LABEL)
     for c, col in enumerate(columns):
         x0, x1 = round((c + 1) * col_w), round((c + 2) * col_w)  # 칸 사이 틈 없이
         backdrop(img, col.get("art_url"), (x0, 0, x1, height), dim=0.66, focus_y=0.1, fade=0.75)
-    for c in range(len(columns)):  # 칸 경계는 클라이언트 금색 선
-        x = round((c + 1) * col_w)
-        dr.line((x, 0, x, height), fill=GOLD_DARK, width=1)
+    for c in range(len(columns)):  # 칸 경계는 선 대신 그늘
+        edge_shadow(img, round((c + 1) * col_w), height)
     for c, col in enumerate(columns):
         cx = int((c + 1.5) * col_w)
         color = HIGHLIGHT if col["badge"] == "MVP" else DEFEAT if col["badge"] == "범인" else WHITE
@@ -147,15 +146,16 @@ def render_players(columns: list[dict], rows: list[tuple]) -> bytes:
     return png(img)
 
 
-def render_objectives(objectives: list[tuple], dragons: list[tuple[str, bool]]) -> bytes:
+def render_objectives(objectives: list[tuple], dragons: list[tuple[str, bool]], background: str | None) -> bytes:
     """objectives: [(이름, 우리, 상대, 아이콘)], dragons: [(아이콘 URL, 우리 팀이 가져갔나)] 시간 순서."""
-    height = 216 + (86 if dragons else 0)
+    height = 222 + (88 if dragons else 0)
     img, dr = canvas(height)
-    client_bg(img)
+    ambient_bg(img, background, focus_y=0.45)
     top = header(dr, "오브젝트", [(ALLY, "우리 팀"), (ENEMY, "상대 팀")])
     cell = (WIDTH - PAD * 2) / len(objectives)
     for n, (label, ours, theirs, icon_url) in enumerate(objectives):
         cx = int(PAD + n * cell + cell / 2)
+        glass(img, (PAD + n * cell + 4, top - 14, PAD + (n + 1) * cell - 4, top + 128))
         ic = icon(icon_url, 38, radius=0)
         if ic:
             img.paste(ic, (cx - 19, top), ic)
@@ -165,19 +165,19 @@ def render_objectives(objectives: list[tuple], dragons: list[tuple[str, bool]]) 
         dr.text((cx + 8, top + 70), str(theirs), font=font(26, 6), fill=ENEMY if theirs > ours else WHITE, anchor="la")
         split_bar(img, cx - cell / 2 + 18, cx + cell / 2 - 18, top + 112, ours, theirs)
     if dragons:  # 드래곤 순서: 누가 어떤 드래곤을 먹었나
-        y = 226
-        dr.line((PAD, y - 20, WIDTH - PAD, y - 20), fill=GOLD_DARK, width=1)
-        dr.text((PAD, y + 11), "드래곤 순서", font=font(18), fill=LABEL)
+        y = 236
+        glass(img, (PAD + 4, y - 12, WIDTH - PAD - 4, y + 54))
+        dr.text((PAD + 22, y + 11), "드래곤 순서", font=font(18), fill=LABEL)
         for n, (url, ours) in enumerate(dragons):
-            medallion(img, PAD + 154 + n * 56, y + 21, 46, url, ALLY if ours else ENEMY, ring_w=3)
+            medallion(img, PAD + 170 + n * 56, y + 21, 46, url, ALLY if ours else ENEMY, ring_w=3)
     return png(img)
 
 
-def render_gold(diffs: list[int], events: list[tuple[float, str, bool]]) -> bytes:
+def render_gold(diffs: list[int], events: list[tuple[float, str, bool]], background: str | None) -> bytes:
     """우리 팀 기준 골드 차이 곡선. events: [(분, 아이콘 URL, 우리 팀이 가져갔나)] 바론·드래곤 등."""
     height = 390
     img, dr = canvas(height)
-    client_bg(img)
+    ambient_bg(img, background, focus_y=0.75)
     header(dr, "골드 차이", [(ALLY, "우리 팀 우세"), (ENEMY, "상대 우세")])
     gx0, gx1, gy0, gy1 = PAD + 62, WIDTH - PAD - 70, 124, height - 48
     mid, half = (gy0 + gy1) / 2, (gy1 - gy0) / 2
@@ -185,10 +185,8 @@ def render_gold(diffs: list[int], events: list[tuple[float, str, bool]]) -> byte
     last = max(len(diffs) - 1, 1)
     px = lambda minute: gx0 + (gx1 - gx0) * minute / last
     py = lambda d: mid - half * d / span
-    for frac in (1, 0.5, -0.5, -1):
-        dr.line((gx0, py(span * frac), gx1, py(span * frac)), fill=GRID, width=1)
+    glass(img, (PAD, gy0 - 12, WIDTH - PAD, gy1 + 12), alpha=10)  # 선 대신 그래프 영역만 살짝 밝게
     for minute in range(0, len(diffs), 5):
-        dr.line((px(minute), gy0, px(minute), gy1), fill=GRID, width=1)
         dr.text((px(minute), gy1 + 12), f"{minute}분", font=font(15), fill=LABEL, anchor="ma")
     dr.text((gx0 - 12, py(span)), f"+{span / 1000:.1f}k", font=font(15), fill=ALLY, anchor="rm")
     dr.text((gx0 - 12, mid), "0", font=font(15), fill=LABEL, anchor="rm")
@@ -199,7 +197,8 @@ def render_gold(diffs: list[int], events: list[tuple[float, str, bool]]) -> byte
     for minute, url, ours in sorted(events):
         x = px(minute)
         color = ALLY if ours else ENEMY
-        dr.line((x, gy0 - 8, x, gy1), fill=shade(color, 0.22), width=1)
+        for y in range(gy0 - 6, gy1, 6):  # 점선
+            dr.line((x, y, x, y + 2), fill=shade(color, 0.45), width=1)
         ix = max(x, slot + 30)  # 겹치면 오른쪽으로 민다
         slot = ix
         medallion(img, ix, 94, 30, url, color)
@@ -235,7 +234,8 @@ def render_gold(diffs: list[int], events: list[tuple[float, str, bool]]) -> byte
     ld.ellipse((ex - 6 * SS, ey - 6 * SS, ex + 6 * SS, ey + 6 * SS), fill=side(diffs[-1]), outline=BG, width=2 * SS)
     layer = layer.resize((WIDTH, height), Image.LANCZOS)
     img.paste(layer, (0, 0), layer)
-    dr.line((gx0, mid, gx1, mid), fill=LABEL, width=1)
+    for x in range(gx0, gx1, 8):  # 0선은 점선
+        dr.line((x, mid, x + 3, mid), fill=LABEL, width=1)
     dr.text((gx1 + 14, ey / SS), f"{diffs[-1] / 1000:+.1f}k", font=font(17, 6), fill=side(diffs[-1]), anchor="lm")
     return png(img)
 
@@ -322,11 +322,12 @@ def build_report(match: dict[str, Any], timeline: dict[str, Any] | None, friends
     monsters = _monster_events(timeline, team_id)
     files = [("result.png", render_banner(won, queue, int(minutes), splash,
                                           side_info(f"우리 팀 · 친구 {len(mine)}명", team), side_info("상대 팀", enemy))),
-             ("players.png", render_players(columns, rows)),
-             ("objectives.png", render_objectives(objectives, [(url, ours) for _, url, ours, dragon in monsters if dragon]))]
+             ("players.png", render_players(columns, rows, splash)),
+             ("objectives.png", render_objectives(objectives, [(url, ours) for _, url, ours, dragon in monsters if dragon],
+                                                    splash))]
     diffs = _gold_diffs(info, timeline, team_id) if timeline else []
     if diffs:
-        files.append(("gold.png", render_gold(diffs, [(minute, url, ours) for minute, url, ours, _ in monsters])))
+        files.append(("gold.png", render_gold(diffs, [(minute, url, ours) for minute, url, ours, _ in monsters], splash)))
 
     facts = {"결과": "승리" if won else "패배", "오브젝트(우리:상대)": {o[0]: f"{o[1]}:{o[2]}" for o in objectives},
              "골드 흐름(우리 팀 기준)": _gold_story(diffs) if diffs else "없음",
@@ -362,7 +363,7 @@ def _build_arena(match: dict, friends: dict[str, Friend], ddragon: DDragon, key:
     files = [("result.png", render_banner(best <= 4, f"아레나 최고 {best}등", int(info["gameDuration"] / 60), splash,
                                           {"label": f"친구 {len(mine)}명", "kills": None,
                                            "icons": [(c["icon_url"], True) for c in columns]}, None)),
-             ("players.png", render_players(columns, rows))]
+             ("players.png", render_players(columns, rows, splash))]
     facts = {"모드": "아레나 (2인 1조, 순위전)", "선수": [{"이름": name(p), "역할": "MVP" if p is mvp else "범인",
                                                      "순위": place(p), "딜량": p["totalDamageDealtToChampions"],
                                                      "KDA": f"{p['kills']}/{p['deaths']}/{p['assists']}"}
