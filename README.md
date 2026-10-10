@@ -56,7 +56,8 @@ BOT_ENV=dev .venv/bin/python -m imposter_finder pubg --include-seen --ignore-age
 - 상태: `data/imposter_finder.db`·`data/fc_meta/`는 매번 Actions 캐시에 저장하고 가장 최근 것을 복원, 이미지 캐시 `data/assets/`는 바뀔 때만 저장. 캐시가 사라지면 첫 실행은 기록만 하고 올리지 않습니다 (중복 방지)
 - 동시에 하나만 실행 (`concurrency`). 공개 레포라 로그도 공개: `players.json`의 이름·닉네임·ID는 `***`로 가리고 건수·에러만 남깁니다
 - 글꼴은 레포의 `fonts/` (Pretendard·Teko, OFL)라 맥과 리눅스 결과가 같습니다
-- 맥 `serve`와 동시에 켜면 같은 경기가 두 번 올라갑니다. 하나만 켭니다
+- 맥 `serve`와 동시에 켜면 같은 경기가 두 번 올라갑니다. 하나만 켭니다 (2026-10-10부터 Actions 운영, 맥은 `launchctl disable`로 꺼 둠)
+- `PLAYERS_JSON`은 한 줄 JSON으로 넣습니다. 여러 줄이면 GitHub이 `{`·`]`만 있는 줄까지 가려 로그가 `***`투성이가 됩니다
 
 ## 자동 실행 (launchd)
 
@@ -67,6 +68,6 @@ launchctl print gui/$(id -u)/com.inticoy.imposter-finder     # 상태
 tail -f logs/imposter-finder.log logs/imposter-finder-error.log
 ```
 
-로그인하면 시작하고, 죽으면 10초 뒤 다시 띄웁니다(`KeepAlive`).
+로그인하면 시작하고, 죽으면 10초 뒤 다시 띄웁니다(`KeepAlive`). 지금은 꺼 둔 상태라 다시 쓰려면 먼저 `launchctl enable gui/$(id -u)/com.inticoy.imposter-finder` 후 `bootstrap`합니다. Actions와 동시에 켜지 않습니다.
 
 `BOT_ENV=prod`면 게임별 `_PROD` 스레드로 보냅니다. `.env` 변경을 적용할 때는 `launchctl kickstart -k gui/$(id -u)/com.inticoy.imposter-finder`로 재시작합니다. 경기 원본과 전송 상태는 로컬 `data/imposter_finder.db`에 저장하며 Git에는 올리지 않습니다.

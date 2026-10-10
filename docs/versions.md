@@ -3,9 +3,9 @@
 | 버전 | 상태 | 한 줄 요약 |
 |---|---|---|
 | v1 | 종료 | GitHub Actions에서 PUBG 그룹 매치 범인찾기 |
-| v2 | **운영 중** | 맥 상주 봇: `/user` 전적 감정서 + 15분 수집 + SQLite |
+| v2 | 종료 (2026-10-10) | 맥 상주 봇: `/user` 전적 감정서 + 15분 수집 + SQLite |
 | v3 | **운영 중 / 확장 중** | PUBG·FC·롤 이미지 리포트 운영, 영입 알림·`@멘션` 자연어 계획 |
-| v4 | 준비 | 맥 상주 대신 GitHub Actions + cron-job.org 15분 수집 (`/user`는 코드만 유지) |
+| v4 | **운영 중** (2026-10-10~) | 맥 상주 대신 GitHub Actions + cron-job.org 15분 수집 (`/user`는 코드만 유지) |
 
 ## v1 — GitHub Actions (2026-05 ~ 08)
 
