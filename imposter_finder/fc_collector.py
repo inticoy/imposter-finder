@@ -11,7 +11,7 @@ from typing import Any
 from imposter_finder.analysis.fc_report import Friend, build_forfeit_report, build_report, is_forfeit
 from imposter_finder.config import ROOT_DIR, Settings
 from imposter_finder.discord import DiscordClient
-from imposter_finder.games.fconline import FcMeta, FcOnlineClient, NexonApiError, NexonQuotaExceeded
+from imposter_finder.games.fconline import FcMeta, FcOnlineClient, FcTeamColors, NexonApiError, NexonQuotaExceeded
 from imposter_finder.registry import load_fc_players
 from imposter_finder.storage import LocalStore
 
@@ -22,11 +22,13 @@ BACKFILL_LIMIT = 100  # 첫 실행에는 넥슨이 보여주는 만큼 (약 30�
 MAX_AGE = timedelta(hours=24)
 
 _meta: FcMeta | None = None
+_colors: FcTeamColors | None = None
 
 
 def run_fc_cycle(settings: Settings, store: LocalStore, notify: bool) -> dict[str, int]:
-    global _meta
+    global _meta, _colors
     _meta = _meta or FcMeta(ROOT_DIR / "data" / "fc_meta")
+    _colors = _colors or FcTeamColors(ROOT_DIR / "data" / "fc_meta")
     players = load_fc_players(settings.players_path)
     client = FcOnlineClient(settings.nexon_api_key or "", lambda day: store.add_api_call("nexon", day),
                             settings.nexon_daily_limit)
@@ -81,10 +83,10 @@ def run_fc_cycle(settings: Settings, store: LocalStore, notify: bool) -> dict[st
             for thread_id in settings.discord_fc_thread_ids:
                 discord.send_message(thread_id, {"discord_payload": payload})
         else:
-            payload, chart = build_report(match, head_to_head, friends, _meta, settings.gemini_api_key,
+            payload, files = build_report(match, head_to_head, friends, _meta, _colors, settings.gemini_api_key,
                                           settings.gemini_model)
             for thread_id in settings.discord_fc_thread_ids:
-                discord.send_with_file(thread_id, payload, "stats.png", chart)
+                discord.send_with_files(thread_id, payload, files)
         store.mark_notification_done(PLATFORM, match_id, "sent")
         published += 1
     return {"friend_matches": len(friend_matches), "published": published}

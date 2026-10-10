@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 import urllib.error
 import urllib.parse
@@ -78,10 +79,87 @@ class FcMeta:
             self._names = {item["id"]: item["name"] for item in self._load("spid")}
         return self._names.get(spid, str(spid))
 
+    def season_image(self, spid: int) -> str | None:
+        if getattr(self, "_season_images", None) is None:
+            self._season_images = {item["seasonId"]: item.get("seasonImg") for item in self._load("seasonid")}
+        return self._season_images.get(spid // 1000000)
+
     def season_name(self, spid: int) -> str:
         if self._seasons is None:
             self._seasons = {item["seasonId"]: item["className"].split(" (")[0] for item in self._load("seasonid")}
         return self._seasons.get(spid // 1000000, "")
+
+
+DATACENTER = "https://fconline.nexon.com/datacenter"
+BROWSER_HEADERS = {"User-Agent": "Mozilla/5.0", "X-Requested-With": "XMLHttpRequest"}
+TEAMCOLOR_SINGLE = 90000000  # '단일팀'은 모든 선수에게 붙어 팀컬러로 치지 않는다
+TEAMCOLOR_MIN_PLAYERS = 3
+
+
+class FcTeamColors:
+    """팀컬러: 공식 API에 없어 FC 온라인 데이터센터 웹페이지를 읽는다. 선수별 결과는 파일에 캐시."""
+
+    def __init__(self, cache_dir: Path) -> None:
+        self.cache_dir = cache_dir
+        self._table: dict[int, tuple[str, str]] | None = None
+        self._players: dict[str, list[int]] | None = None
+
+    def _fetch(self, path: str, data: dict[str, Any] | None = None) -> str:
+        body = urllib.parse.urlencode(data).encode() if data else None
+        req = urllib.request.Request(f"{DATACENTER}/{path}", data=body, headers=BROWSER_HEADERS)
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return resp.read().decode("utf-8", errors="replace")
+
+    def table(self) -> dict[int, tuple[str, str]]:
+        """팀컬러 번호 → (이름, 엠블럼·국기 이미지 큰 것). 일주일에 한 번 새로 받는다."""
+        if self._table is None:
+            path = self.cache_dir / "teamcolors.json"
+            if not path.exists() or time.time() - path.stat().st_mtime > 7 * 24 * 3600:
+                table = {}
+                for item in self._fetch("teamcolor").split('<div class="teamcolor_item">')[1:]:
+                    tid = re.search(r"GetTeamColorDetail\((\d+)\)", item)
+                    name = re.search(r'<div class="name">([^<]+)</div>', item)
+                    img = re.search(r'<div class="crests[^"]*">\s*<img src="([^"]+)"', item)
+                    if tid and name and img:
+                        table[tid.group(1)] = (name.group(1).strip(), img.group(1).replace("/medium/", "/large/"))
+                if table:
+                    self.cache_dir.mkdir(parents=True, exist_ok=True)
+                    path.write_text(json.dumps(table, ensure_ascii=False), encoding="utf-8")
+            self._table = {int(k): tuple(v) for k, v in json.loads(path.read_text(encoding="utf-8")).items()}
+        return self._table
+
+    def of_player(self, spid: int) -> list[int]:
+        """선수 카드가 가진 소속 팀컬러 번호들."""
+        path = self.cache_dir / "player_teamcolors.json"
+        if self._players is None:
+            self._players = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+        key = str(spid)
+        if key not in self._players:
+            html = self._fetch("PlayerAbility", {"spid": spid, "n1Strong": 1})
+            self._players[key] = sorted({int(n) for n in re.findall(r'class="selector_item tdefault(\d+)"', html)} - {0})
+            self.cache_dir.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(self._players), encoding="utf-8")
+            time.sleep(0.2)
+        return self._players[key]
+
+    def of_squad(self, spids: list[int]) -> tuple[str, str] | None:
+        """선발 선수들이 가장 많이 공유하는 클럽·국가 팀컬러 (이름, 이미지). 3명 미만이면 없음."""
+        table = self.table()
+        counts: dict[int, int] = {}
+        for spid in spids:
+            try:
+                ids = self.of_player(spid)
+            except Exception as exc:  # 웹페이지가 바뀌거나 막혀도 리포트는 보낸다
+                print(f"[fc] teamcolor failed {spid}: {exc}")
+                continue
+            for tid in ids:
+                if tid != TEAMCOLOR_SINGLE and tid in table:
+                    counts[tid] = counts.get(tid, 0) + 1
+        if not counts:
+            return None
+        # 많이 겹치는 순, 같으면 클럽(1xxx) > 국가(2xxx) > 특수
+        best = max(counts, key=lambda t: (counts[t], 1000 <= t < 2000, 2000 <= t < 3000))
+        return table[best] if counts[best] >= TEAMCOLOR_MIN_PLAYERS else None
 
 
 def player_image(spid: int) -> str | None:
