@@ -16,7 +16,7 @@ from imposter_finder.analysis.cards import (ALLY, BG, DEFEAT, ENEMY, GOLD, HIGHL
 from imposter_finder.games.lol import ARENA_QUEUES, QUEUE_NAMES, DDragon
 
 ACCENT_WIN, ACCENT_LOSE = 0x2ECC71, 0xED4245
-AMBIENT_DIM = 0.7  # 흐린 원화 바탕을 얼마나 어둡게 (1이면 원화 없음)
+AMBIENT_DIM = 0.85  # 흐린 원화 바탕을 얼마나 어둡게 (1이면 원화 없음)
 GOLD_PANEL = False  # 골드 그래프 뒤 반투명 판
 MINIMAP_ICONS = "https://raw.communitydragon.org/latest/game/assets/ux/minimap/icons"
 # 게임 안 미니맵 컬러 아이콘 (64px)
