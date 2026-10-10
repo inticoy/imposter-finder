@@ -10,6 +10,14 @@ class DiscordError(RuntimeError):
     pass
 
 
+SUPPRESS_NOTIFICATIONS = 1 << 12
+
+
+def _silent(payload: dict) -> dict:
+    """봇 리포트는 모두 @silent: 태그는 남지만 푸시 알림은 가지 않는다."""
+    return payload | {"flags": payload.get("flags", 0) | SUPPRESS_NOTIFICATIONS}
+
+
 class DiscordClient:
     def __init__(self, bot_token: str, timeout: int = 20) -> None:
         self.bot_token = bot_token
@@ -71,15 +79,16 @@ class DiscordClient:
 
     def _report_payload(self, report: dict | str) -> dict:
         if isinstance(report, str):
-            return {"content": report[:2000]}
+            return _silent({"content": report[:2000]})
         payload = report.get("discord_payload")
         if isinstance(payload, dict):
-            return payload
-        return {"content": str(report.get("message", ""))[:2000]}
+            return _silent(payload)
+        return _silent({"content": str(report.get("message", ""))[:2000]})
 
     def send_with_file(self, channel_id: str, payload: dict, filename: str, data: bytes,
                        content_type: str = "image/png") -> dict | None:
         """Post a message payload with one attached file (multipart/form-data)."""
+        payload = _silent(payload)
         boundary = f"----imposterfinder{uuid.uuid4().hex}"
         parts = [
             f"--{boundary}\r\nContent-Disposition: form-data; name=\"payload_json\"\r\n"
