@@ -16,6 +16,7 @@ from imposter_finder.analysis.pubg_player import DEFAULT_MATCH_COUNT, analyze_pu
 from imposter_finder.collector import refresh_player_history, run_collection_cycle
 from imposter_finder.config import Settings
 from imposter_finder.fc_collector import run_fc_cycle
+from imposter_finder.lol_collector import run_lol_cycle
 from imposter_finder.games.pubg import PubgClient
 from imposter_finder.healthcheck import ping as ping_healthcheck
 from imposter_finder.registry import PubgPlayer, load_pubg_players
@@ -38,6 +39,7 @@ def run_discord_bot(settings: Settings, serve: bool = False) -> None:
     class ImposterFinderBot(commands.Bot):
         collector_task: asyncio.Task[None] | None = None
         fc_task: asyncio.Task[None] | None = None
+        lol_task: asyncio.Task[None] | None = None
 
         async def setup_hook(self) -> None:
             if settings.discord_guild_id:
@@ -50,9 +52,11 @@ def run_discord_bot(settings: Settings, serve: bool = False) -> None:
                 self.collector_task = asyncio.create_task(_collection_loop(settings, store), name="pubg-collector")
                 if settings.nexon_api_key and settings.discord_fc_thread_ids:
                     self.fc_task = asyncio.create_task(_fc_loop(settings, store), name="fc-collector")
+                if settings.riot_api_key and settings.discord_lol_thread_ids:
+                    self.lol_task = asyncio.create_task(_lol_loop(settings, store), name="lol-collector")
 
         async def close(self) -> None:
-            for task in (self.collector_task, self.fc_task):
+            for task in (self.collector_task, self.fc_task, self.lol_task):
                 if task:
                     task.cancel()
                     try:
@@ -168,3 +172,18 @@ async def _fc_loop(settings: Settings, store: LocalStore) -> None:
         except Exception as exc:
             print(f"[fc] ERROR: {exc}")
         await asyncio.sleep(max(settings.fc_poll_interval_minutes, 1) * 60)
+
+
+async def _lol_loop(settings: Settings, store: LocalStore) -> None:
+    """롤 친구 경기: 첫 실행은 저장만 하고, 이후 주기마다 새 경기를 리포트한다."""
+    first_cycle = not store.has_lol_matches()
+    while True:
+        try:
+            result = await asyncio.to_thread(run_lol_cycle, settings, store, not first_cycle)
+            print(f"[lol] group_matches={result['group_matches']} published={result['published']} bootstrap={first_cycle}")
+            first_cycle = False
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            print(f"[lol] ERROR: {exc}")
+        await asyncio.sleep(max(settings.lol_poll_interval_minutes, 1) * 60)

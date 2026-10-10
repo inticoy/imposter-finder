@@ -48,6 +48,9 @@ class Settings:
     # FC 리포트는 BOT_ENV에 맞는 thread 하나로 보낸다
     discord_fc_thread_ids: tuple[str, ...] = ()
     fc_poll_interval_minutes: float = 15.0
+    riot_api_key: str | None = None
+    discord_lol_thread_ids: tuple[str, ...] = ()
+    lol_poll_interval_minutes: float = 15.0
 
 
 def load_settings() -> Settings:
@@ -83,4 +86,7 @@ def load_settings() -> Settings:
         gemini_model=env("GEMINI_MODEL", "gemini-3.5-flash-lite"),
         discord_fc_thread_ids=tuple(thread for thread in (env(f"DISCORD_THREAD_FC_{bot_env.upper()}"),) if thread),
         fc_poll_interval_minutes=float(env("FC_POLL_INTERVAL_MINUTES", "15")),
+        riot_api_key=env("RIOT_API_KEY"),
+        discord_lol_thread_ids=tuple(thread for thread in (env(f"DISCORD_THREAD_LOL_{bot_env.upper()}"),) if thread),
+        lol_poll_interval_minutes=float(env("LOL_POLL_INTERVAL_MINUTES", "15")),
     )

@@ -59,3 +59,23 @@ def load_fc_players(path: Path) -> list[FcPlayer]:
         for player in registry.get("players", [])
         if player.get("accounts", {}).get("fconline", {}).get("nickname")
     ]
+
+
+@dataclass(frozen=True)
+class LolAccount:
+    name: str
+    discord_user_id: str | None
+    riot_id: str  # "닉네임#태그"
+
+
+def load_lol_accounts(path: Path) -> list[LolAccount]:
+    """롤 계정 목록. 한 사람이 계정을 여러 개 가질 수 있다 (accounts.lol.riot_ids)."""
+    if not path.exists():
+        return []
+    with path.open("r", encoding="utf-8") as f:
+        registry = json.load(f)
+    return [
+        LolAccount(name=player["name"], discord_user_id=player.get("discord_user_id"), riot_id=riot_id)
+        for player in registry.get("players", [])
+        for riot_id in player.get("accounts", {}).get("lol", {}).get("riot_ids", [])
+    ]

@@ -61,6 +61,18 @@ class LocalStore:
                     ouid TEXT NOT NULL,
                     PRIMARY KEY (match_id, ouid)
                 );
+                CREATE TABLE IF NOT EXISTS lol_accounts (
+                    riot_id TEXT PRIMARY KEY COLLATE NOCASE,
+                    puuid TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS lol_matches (
+                    match_id TEXT PRIMARY KEY,
+                    queue_id INTEGER NOT NULL,
+                    game_creation INTEGER NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    collected_at TEXT NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS api_usage (
                     api TEXT NOT NULL,
                     day TEXT NOT NULL,
@@ -179,6 +191,37 @@ class LocalStore:
                 (ouid_a, ouid_b, limit),
             ).fetchall()
         return [json.loads(row["payload_json"]) for row in rows]
+
+    # ── 리그 오브 레전드 ──────────────────────────────
+    def lol_puuid(self, riot_id: str) -> str | None:
+        with self._lock:
+            row = self._connection.execute("SELECT puuid FROM lol_accounts WHERE riot_id = ?", (riot_id,)).fetchone()
+        return row["puuid"] if row else None
+
+    def set_lol_puuid(self, riot_id: str, puuid: str) -> None:
+        with self._lock:
+            self._connection.execute(
+                "INSERT OR REPLACE INTO lol_accounts (riot_id, puuid, updated_at) VALUES (?, ?, ?)", (riot_id, puuid, _now()))
+            self._connection.commit()
+
+    def has_lol_matches(self) -> bool:
+        with self._lock:
+            return self._connection.execute("SELECT 1 FROM lol_matches LIMIT 1").fetchone() is not None
+
+    def lol_match(self, match_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._connection.execute("SELECT payload_json FROM lol_matches WHERE match_id = ?", (match_id,)).fetchone()
+        return json.loads(row["payload_json"]) if row else None
+
+    def upsert_lol_match(self, match: dict[str, Any]) -> None:
+        info = match["info"]
+        with self._lock:
+            self._connection.execute(
+                "INSERT OR REPLACE INTO lol_matches (match_id, queue_id, game_creation, payload_json, collected_at)"
+                " VALUES (?, ?, ?, ?, ?)",
+                (match["metadata"]["matchId"], info["queueId"], info["gameCreation"],
+                 json.dumps(match, ensure_ascii=False, separators=(",", ":")), _now()))
+            self._connection.commit()
 
     # ── API 사용량 ────────────────────────────────────
     def add_api_call(self, api: str, day: str) -> int:

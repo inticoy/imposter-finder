@@ -87,15 +87,25 @@ class DiscordClient:
 
     def send_with_file(self, channel_id: str, payload: dict, filename: str, data: bytes,
                        content_type: str = "image/png") -> dict | None:
-        """Post a message payload with one attached file (multipart/form-data)."""
-        payload = _silent(payload)
+        """Post a message payload with one attached file."""
+        return self.send_with_files(channel_id, payload, [(filename, data, content_type)])
+
+    def send_with_files(self, channel_id: str, payload: dict, files: list[tuple]) -> dict | None:
+        """Post a message payload with attached files (multipart/form-data).
+
+        files: [(filename, bytes) | (filename, bytes, content_type)]. payload의 attachment://filename으로 참조한다.
+        """
+        payload = _silent(payload) | {"attachments": [{"id": n, "filename": f[0]} for n, f in enumerate(files)]}
         boundary = f"----imposterfinder{uuid.uuid4().hex}"
         parts = [
             f"--{boundary}\r\nContent-Disposition: form-data; name=\"payload_json\"\r\n"
-            f"Content-Type: application/json\r\n\r\n".encode() + json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-            f"--{boundary}\r\nContent-Disposition: form-data; name=\"files[0]\"; filename=\"{filename}\"\r\n"
-            f"Content-Type: {content_type}\r\n\r\n".encode() + data,
+            f"Content-Type: application/json\r\n\r\n".encode() + json.dumps(payload, ensure_ascii=False).encode("utf-8")
         ]
+        for n, (filename, data, *rest) in enumerate(files):
+            content_type = rest[0] if rest else "image/png"
+            parts.append(
+                f"--{boundary}\r\nContent-Disposition: form-data; name=\"files[{n}]\"; filename=\"{filename}\"\r\n"
+                f"Content-Type: {content_type}\r\n\r\n".encode() + data)
         body = b"\r\n".join(parts) + f"\r\n--{boundary}--\r\n".encode()
         req = urllib.request.Request(
             f"https://discord.com/api/v10/channels/{channel_id}/messages",
