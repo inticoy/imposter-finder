@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import math
+from datetime import datetime
 from functools import lru_cache
 from io import BytesIO
 from typing import Any
@@ -25,13 +26,13 @@ YELLOW = (242, 169, 0)  # 배그 로고 노랑 #F2A900
 TEXT, MUTED, DIM = (236, 236, 236), (150, 150, 150), (96, 96, 96)
 RED = (230, 62, 50)  # 사망·범인
 BLUE_ZONE = (44, 92, 230)
-SQUAD = [(250, 206, 62), (245, 136, 44), (70, 166, 245), (104, 206, 100)]  # 스쿼드 1~4번 색
+SQUAD = [(250, 206, 62), (70, 166, 245), (104, 206, 100), (230, 62, 50)]  # 노랑·파랑·초록·빨강
 ACCENT_WIN, ACCENT_LOSE = 0xF2A900, 0x5A5A5A  # 카드 왼쪽 색: 치킨이면 노랑
 MAX_LINE_CHARS, MAX_TRIES = 52, 3
 TEKO = "https://raw.githubusercontent.com/google/fonts/main/ofl/teko/Teko%5Bwght%5D.ttf"
 KILLFEED = f"{ASSETS}/Assets/Icons/Killfeed"
 MODES = {"squad": "스쿼드 TPP", "squad-fpp": "스쿼드 FPP", "duo": "듀오 TPP", "duo-fpp": "듀오 FPP",
-         "solo": "솔로 TPP", "solo-fpp": "솔로 FPP"}
+         "solo": "솔로 TPP", "solo-fpp": "솔로 FPP", "tdm": "팀 데스매치"}
 
 
 @lru_cache(maxsize=None)
@@ -161,11 +162,180 @@ def render_result(story: Story | None, place: int, teams: int, map_ko: str, mode
     # 오른쪽 팀 합계
     col_w = 120
     rx = W - 44 - col_w * len(totals)
-    _panel(img, (rx - 10, 66, W - 34, 206), radius=16, alpha=150)
+    _panel(img, (rx - 10, 68, W - 34, 180), radius=16, alpha=150)
     for i, (label, value) in enumerate(totals):
         mx = rx + col_w * i + col_w / 2
-        d.text((mx, 160), value, font=teko(66, 600), fill=TEXT, anchor="ms")
-        d.text((mx, 182), label, font=font(16, 4), fill=MUTED, anchor="mm")
+        d.text((mx, 139), value, font=teko(58, 600), fill=TEXT, anchor="ms")
+        d.text((mx, 160), label, font=font(15, 4), fill=MUTED, anchor="mm")
+    return png(img)
+
+
+def _tdm_stage(height: int, weapon: str | None = None) -> Image.Image:
+    """PUBG HUD colors over a quiet tactical texture; weapon art is an actual PUBG asset."""
+    img = Image.new("RGB", (WIDTH, height), BG)
+    glow = Image.new("RGBA", img.size)
+    g = ImageDraw.Draw(glow)
+    g.ellipse((-230, -height, 560, height * 2), fill=YELLOW + (36,))
+    g.ellipse((590, -height, 1340, height * 2), fill=SQUAD[1] + (25,))
+    img = Image.alpha_composite(img.convert("RGBA"), glow.filter(ImageFilter.GaussianBlur(95))).convert("RGB")
+    d = ImageDraw.Draw(img)
+    for x in range(-height, WIDTH + height, 66):
+        d.line((x, 0, x + height, height), fill=(34, 35, 35), width=1)
+    for y in range(28, height, 42):
+        d.line((0, y, WIDTH, y), fill=(29, 30, 30), width=1)
+    for x in range(25, WIDTH, 190):
+        d.rectangle((x, 15, x + 3, 21), fill=(75, 69, 48))
+    if weapon:
+        icon = _white(weapon_icon_url(weapon), round(height * 0.60))
+        if icon:
+            alpha = icon.getchannel("A").point(lambda value: round(value * 0.10))
+            img.paste(icon.convert("RGB"), (WIDTH - icon.width - 10, round(height * 0.20)), alpha)
+    return img
+
+
+def render_tdm_result(map_name: str, minutes: float, teams: list[dict],
+                      rounds: list[dict], weapon: str | None) -> bytes:
+    """Match winner and supported round score; total kills belong in the detail card."""
+    W, H = WIDTH, 300
+    img = _tdm_stage(H, weapon)
+    d = ImageDraw.Draw(img)
+    winner = next((team for team in teams if team.get("rank") == 1), None)
+    loser = next((team for team in teams if team is not winner), None)
+    d.text((44, 40), f"{map_name} · 팀 데스매치 · {minutes:.0f}분", font=font(18, 4), fill=MUTED, anchor="lm")
+    if winner:
+        d.text((42, 128), "MATCH WINNER", font=teko(68, 600), fill=YELLOW, anchor="ls")
+        d.text((44, 184), f"TEAM {winner['id']:02d}", font=teko(65, 600), fill=TEXT, anchor="ls")
+    else:
+        d.text((44, 154), "TEAM DEATHMATCH", font=teko(62, 600), fill=TEXT, anchor="ls")
+    if winner and loser:
+        _panel(img, (635, 68, W - 34, 181), radius=16, alpha=165)
+        if rounds:
+            win_rounds = sum(r["winner"] == winner["id"] for r in rounds)
+            loss_rounds = len(rounds) - win_rounds
+            d.text((801, 135), f"{win_rounds} : {loss_rounds}", font=teko(76, 600), fill=TEXT, anchor="ms")
+            d.text((801, 160), "라운드 승리", font=font(15, 4), fill=MUTED, anchor="mm")
+        else:
+            d.text((801, 137), "WIN", font=teko(73, 600), fill=YELLOW, anchor="ms")
+            d.text((801, 160), "라운드 기록 확인 불가", font=font(14, 4), fill=MUTED, anchor="mm")
+    if rounds:
+        for i, item in enumerate(rounds):
+            x = 44 + i * 187
+            color = YELLOW if winner and item["winner"] == winner["id"] else SQUAD[1]
+            _panel(img, (x, 220, x + 169, 261), radius=9, alpha=110)
+            _panel(img, (x + 10, 230, x + 15, 251), radius=2, alpha=255, color=color)
+            d.text((x + 24, 241), f"R{i + 1}  TEAM {item['winner']:02d}", font=font(15, 6), fill=TEXT, anchor="lm")
+    elif winner and loser:
+        for i, team in enumerate((winner, loser)):
+            x = 44 + i * 187
+            color = YELLOW if i == 0 else SQUAD[1]
+            _panel(img, (x, 228, x + 5, 251), radius=2, alpha=255, color=color)
+            d.text((x + 16, 239), f"TEAM {team['id']:02d} · {'승리' if i == 0 else '패배'}",
+                   font=font(16, 6), fill=TEXT, anchor="lm")
+    return png(img)
+
+
+def render_tdm_comparison(teams: list[dict], mvp: str | None, ace: str | None,
+                          culprit: str | None, weapon: str | None) -> bytes:
+    """Team comparison with the same HUD panels and accent palette as squad reports."""
+    W = WIDTH
+    H = max(470, 280 + 56 * max((len(team["players"]) for team in teams), default=0))
+    img = _tdm_stage(H, weapon)
+    d = ImageDraw.Draw(img)
+    d.text((44, 38), "팀별 기록", font=font(22, 6), fill=TEXT, anchor="lm")
+    d.text((W - 40, 38), "승리 팀 / 패배 팀", font=font(15, 4), fill=MUTED, anchor="rm")
+    margin, gap = 44, 20
+    card_w = (W - margin * 2 - gap) / 2
+    max_damage = max((team["damage"] for team in teams), default=1) or 1
+    for idx, team in enumerate(teams[:2]):
+        x = margin + idx * (card_w + gap)
+        accent = YELLOW if team.get("rank") == 1 else SQUAD[1]
+        _panel(img, (x, 64, x + card_w, H - 20), radius=15, alpha=174)
+        _panel(img, (x + 18, 79, x + 24, 104), radius=3, alpha=255, color=accent)
+        title = f"TEAM {team['id']:02d}"
+        d.text((x + 38, 91), title, font=teko(33, 600), fill=TEXT, anchor="lm")
+        if team.get("rank") == 1:
+            d.text((x + card_w - 18, 91), "WIN", font=font(14, 6), fill=YELLOW, anchor="rm")
+        elif team.get("rank") == 2:
+            d.text((x + card_w - 18, 91), "LOSS", font=font(14, 5), fill=MUTED, anchor="rm")
+        d.text((x + 18, 119), f"킬 {team['kills']}   ·   피해량 {team['damage']:.0f}",
+               font=font(15, 4), fill=MUTED, anchor="lm")
+        _panel(img, (x + 14, 140, x + card_w - 14, 141), radius=1, alpha=70)
+        name_x = x + 18
+        metric_left = x + 201
+        metric_w = (card_w - (metric_left - x) - 14) / 4
+        for j, label in enumerate(("킬", "딜", "HS", "사망")):
+            d.text((metric_left + metric_w * (j + 0.5), 161), label, font=font(13, 4), fill=DIM, anchor="mm")
+        for row, player in enumerate(team["players"]):
+            cy = 204 + row * 56
+            if row:
+                _panel(img, (x + 16, cy - 21, x + card_w - 16, cy - 20), radius=1, alpha=28)
+            name = player["name"]
+            name_font = font(16 if d.textlength(name, font=font(16, 6)) <= 118 else 13, 6)
+            d.text((name_x, cy - 6), name, font=name_font,
+                   fill=TEXT if player["friend"] else MUTED, anchor="lm")
+            badge = ("MVP" if player["friend"] and player["friend_name"] == mvp else
+                     "ACE" if player["friend"] and player["friend_name"] == ace else
+                     "범인" if player["friend"] and player["friend_name"] == culprit else None)
+            if badge:
+                color = YELLOW if badge == "MVP" else SQUAD[1] if badge == "ACE" else RED
+                _panel(img, (name_x, cy + 8, name_x + (40 if badge != "범인" else 38), cy + 25),
+                       radius=8, alpha=255, color=color)
+                d.text((name_x + 19, cy + 16), badge, font=font(11, 6), fill=BG, anchor="mm")
+            values = (player["kills"], round(player["damage"]), player["headshots"], player["deaths"])
+            for j, value in enumerate(values):
+                d.text((metric_left + metric_w * (j + 0.5), cy), str(value), font=teko(27, 500),
+                       fill=TEXT if player["friend"] else MUTED, anchor="mm")
+        d.text((x + 18, H - 85), "팀 피해량", font=font(13, 4), fill=MUTED, anchor="lm")
+        d.text((x + card_w - 18, H - 85), f"{team['damage']:.0f}", font=teko(25, 600), fill=accent, anchor="rm")
+        _bar(img, (x + 18, H - 62, x + card_w - 18, H - 52), (57, 57, 57))
+        _bar(img, (x + 18, H - 62, x + 18 + (card_w - 36) * team["damage"] / max_damage, H - 52), accent)
+    return png(img)
+
+
+def render_tdm_weapons(teams: list[dict], weapon: str | None) -> bytes:
+    """Every participant's most used weapon, from LogMatchEnd weapon statistics."""
+    W = WIDTH
+    H = max(520, 128 + 128 * max((len(team["players"]) for team in teams), default=0))
+    img = _tdm_stage(H, weapon)
+    d = ImageDraw.Draw(img)
+    d.text((44, 38), "쓴 무기", font=font(22, 6), fill=TEXT, anchor="lm")
+    d.text((W - 40, 38), "적에게 준 피해 순", font=font(14, 4), fill=MUTED, anchor="rm")
+    margin, gap = 44, 20
+    card_w = (W - margin * 2 - gap) / 2
+    for team_index, team in enumerate(teams[:2]):
+        x = margin + team_index * (card_w + gap)
+        accent = YELLOW if team.get("rank") == 1 else SQUAD[1]
+        _panel(img, (x + 18, 58, x + 24, 81), radius=3, alpha=255, color=accent)
+        d.text((x + 38, 70), f"TEAM {team['id']:02d}", font=teko(27, 600), fill=TEXT, anchor="lm")
+        for row, player in enumerate(team["players"]):
+            y = 96 + row * 128
+            _panel(img, (x, y, x + card_w, y + 116), radius=12, alpha=170)
+            d.text((x + 16, y + 19), player["name"], font=font(16, 6), fill=TEXT, anchor="lm")
+            weapons = player.get("weapons") or []
+            if not weapons:
+                d.text((x + 16, y + 66), "무기 기록 없음", font=font(15, 4), fill=MUTED, anchor="lm")
+                continue
+            main = weapons[0]
+            icon = _white(weapon_icon_url(main["weapon"]), 35)
+            if icon:
+                if icon.width > 198:
+                    icon = icon.resize((198, round(icon.height * 198 / icon.width)), Image.LANCZOS)
+                img.paste(icon, (round(x + 16), round(y + 49 - icon.height / 2)), icon)
+            label = weapon_name(main["weapon"])
+            name_font = next((teko(size, 500) for size in (25, 22, 19, 16)
+                              if d.textlength(label, font=teko(size, 500)) <= 198), teko(16, 500))
+            while d.textlength(label, font=name_font) > 198 and len(label) > 3:
+                label = label[:-2].rstrip() + "…"
+            d.text((x + 16, y + 84), label, font=name_font, fill=TEXT, anchor="ls")
+            d.text((x + card_w - 16, y + 62), f"{main['damage']:.0f}", font=teko(44, 600),
+                   fill=accent, anchor="rs")
+            d.text((x + card_w - 16, y + 83), f"딜  ·  {main['kills']}처치", font=font(13, 4),
+                   fill=MUTED, anchor="rm")
+            if len(weapons) > 1:
+                second = weapons[1]
+                second_label = weapon_name(second["weapon"])
+                d.text((x + 16, y + 104), f"#2  {second_label[:19]}  ·  {second['damage']:.0f}딜",
+                       font=font(12, 4), fill=DIM, anchor="lm")
     return png(img)
 
 
@@ -453,7 +623,13 @@ def render_weapons(story: Story, colors: dict[str, tuple]) -> bytes:
                 ic = ic.resize((round(card_w - 120), round(28 * (card_w - 120) / ic.width)), Image.LANCZOS)
             if ic:
                 img.paste(ic, (round(x0 + 16), round(y0 + 34 - ic.height / 2)), ic)
-            d.text((x0 + 16, y0 + 80), weapon_name(causer), font=teko(26, 500), fill=TEXT, anchor="ls")
+            name = weapon_name(causer)
+            name_width = max(48, card_w - 132)
+            name_font = next((teko(size, 500) for size in (26, 23, 20, 17)
+                              if d.textlength(name, font=teko(size, 500)) <= name_width), teko(17, 500))
+            while d.textlength(name, font=name_font) > name_width and len(name) > 3:
+                name = name[:-2].rstrip() + "…"
+            d.text((x0 + 16, y0 + 80), name, font=name_font, fill=TEXT, anchor="ls")
             d.text((x0 + card_w - 16, y0 + 52), f"{dmg:.0f}", font=teko(44, 600), fill=YELLOW, anchor="rs")
             tags = []
             if m.weapon_knocks.get(causer):
@@ -467,6 +643,10 @@ def render_weapons(story: Story, colors: dict[str, tuple]) -> bytes:
 # ── 리포트 ───────────────────────────────────────────────
 def build_report(platform: str, match: dict[str, Any], telemetry: list[dict[str, Any]], registered: list[PubgPlayer],
                  gemini_api_key: str | None, gemini_model: str) -> tuple[dict, list[tuple]]:
+    attrs = match["data"]["attributes"]
+    if str(attrs.get("gameMode", "")).casefold() == "tdm":
+        return _build_tdm_report(platform, match, telemetry, registered, gemini_api_key, gemini_model)
+
     analysis = analyze_pubg_match(platform, match, telemetry, registered)
     scores = analysis["scores"]  # 친구 이름 → {pubg_name, rating, tags, ...}
     by_nick = {v["pubg_name"].lower(): name for name, v in scores.items()}
@@ -489,6 +669,12 @@ def build_report(platform: str, match: dict[str, Any], telemetry: list[dict[str,
     else:
         squad_names = [v["pubg_name"] for v in scores.values()]
         members = []
+    ranked_pubg_names = [scores[name]["pubg_name"] for name in ranked]
+    ranked_keys = {name.casefold() for name in ranked_pubg_names}
+    squad_names = ranked_pubg_names + [name for name in squad_names if name.casefold() not in ranked_keys]
+    if story:
+        rank_by_nick = {name.casefold(): rank for rank, name in enumerate(squad_names)}
+        story.members.sort(key=lambda member: rank_by_nick.get(member.name.casefold(), len(rank_by_nick)))
     colors = {n: SQUAD[i % len(SQUAD)] for i, n in enumerate(squad_names)}
     stats = [participants.get(n.lower(), {}) for n in squad_names]
     place = int(stats[0].get("winPlace") or 0) if stats else 0
@@ -535,6 +721,232 @@ def build_report(platform: str, match: dict[str, Any], telemetry: list[dict[str,
     return _payload([friends[n] for n in ranked if n in friends], place, files, ai), files
 
 
+def _tdm_rounds(duration: float, telemetry: list[dict], winner_id: int | None,
+                team_ids: set[int]) -> list[dict]:
+    """Infer 10-minute rounds only when kill gaps and the final roster result agree."""
+    round_count = round(duration / 600)
+    if winner_id is None or round_count not in (2, 3) or abs(duration - round_count * 600) > 35:
+        return []
+    start = next((event for event in telemetry if event.get("_T") == "LogMatchStart"), None)
+    if not start:
+        return []
+    t0 = datetime.fromisoformat(start["_D"].replace("Z", "+00:00"))
+    kind = "LogPlayerKillV2" if any(e.get("_T") == "LogPlayerKillV2" for e in telemetry) else "LogPlayerKill"
+    kills = []
+    for event in telemetry:
+        if event.get("_T") != kind:
+            continue
+        killer = event.get("killer") or event.get("finisher") or {}
+        victim = event.get("victim") or {}
+        team_id = killer.get("teamId")
+        if team_id not in team_ids or team_id == victim.get("teamId"):
+            continue
+        seconds = (datetime.fromisoformat(event["_D"].replace("Z", "+00:00")) - t0).total_seconds()
+        kills.append((seconds, team_id))
+    kills.sort()
+    if len(kills) < 4:
+        return []
+    boundaries = []
+    for i in range(1, round_count):
+        expected = i * 600
+        candidates = [(b[0] - a[0], (a[0] + b[0]) / 2) for a, b in zip(kills, kills[1:])
+                      if expected - 90 <= (a[0] + b[0]) / 2 <= expected + 90]
+        if not candidates:
+            return []
+        gap, boundary = max(candidates)
+        if gap < 18:
+            return []
+        boundaries.append(boundary)
+    rounds = [{"winner": None, "kills": {team_id: 0 for team_id in team_ids}} for _ in range(round_count)]
+    for seconds, team_id in kills:
+        index = min(sum(seconds >= boundary for boundary in boundaries), round_count - 1)
+        rounds[index]["kills"][team_id] += 1
+    for item in rounds:
+        ordered = sorted(item["kills"], key=lambda team_id: item["kills"][team_id], reverse=True)
+        if len(ordered) != 2 or item["kills"][ordered[0]] == item["kills"][ordered[1]]:
+            return []
+        item["winner"] = ordered[0]
+    return rounds if sum(item["winner"] == winner_id for item in rounds) == 2 else []
+
+
+def _tdm_weapon_stats(telemetry: list[dict]) -> dict[str, list[dict]]:
+    """Weapon damage/kills from the match-end summary, with event fallback."""
+    end = next((event for event in telemetry if event.get("_T") == "LogMatchEnd"), None)
+    by_account: dict[str, list[dict]] = {}
+    for entry in (end or {}).get("allWeaponStats", []):
+        account_id = entry.get("accountId")
+        weapons = []
+        for stat in entry.get("stats", []):
+            damage = float(stat.get("damage") or 0)
+            kills = sum(int(hit.get("kills") or 0) for hit in stat.get("hitDetails", []))
+            if stat.get("weapon") and (damage > 0 or kills > 0):
+                weapons.append({"weapon": stat["weapon"], "damage": damage, "kills": kills})
+        if account_id:
+            by_account[account_id] = sorted(weapons, key=lambda item: (-item["damage"], -item["kills"]))
+    gathered: dict[str, dict[str, dict]] = {}
+    for event in telemetry:
+        kind = event.get("_T")
+        if kind == "LogPlayerTakeDamage":
+            attacker, victim = event.get("attacker") or {}, event.get("victim") or {}
+            weapon = event.get("damageCauserName")
+            if not attacker.get("accountId") or not weapon or attacker.get("teamId") == victim.get("teamId"):
+                continue
+            stat = gathered.setdefault(attacker["accountId"], {}).setdefault(
+                weapon, {"weapon": weapon, "damage": 0.0, "kills": 0})
+            stat["damage"] += max(0, float(event.get("damage") or 0))
+        elif kind == "LogPlayerKillV2":
+            killer = event.get("killer") or event.get("finisher") or {}
+            info = event.get("killerDamageInfo") or event.get("finishDamageInfo") or {}
+            weapon = info.get("damageCauserName")
+            if killer.get("accountId") and weapon:
+                stat = gathered.setdefault(killer["accountId"], {}).setdefault(
+                    weapon, {"weapon": weapon, "damage": 0.0, "kills": 0})
+                stat["kills"] += 1
+    fallback = {account: sorted(items.values(), key=lambda item: (-item["damage"], -item["kills"]))
+                for account, items in gathered.items()}
+    return fallback | by_account
+
+
+def _build_tdm_report(platform: str, match: dict[str, Any], telemetry: list[dict[str, Any]],
+                      registered: list[PubgPlayer], gemini_api_key: str | None,
+                      gemini_model: str) -> tuple[dict, list[tuple]]:
+    """TDM uses roster sides and round stats; battle royale scoring/story does not apply."""
+    attrs = match["data"]["attributes"]
+    included = match.get("included", [])
+    participant_items = [item for item in included if item.get("type") == "participant"]
+    participants_by_id = {item.get("id"): item.get("attributes", {}).get("stats", {})
+                          for item in participant_items}
+    friend_by_nick = {p.nickname.casefold(): p for p in registered if p.platform == platform}
+    roster_by_id: dict[int, dict] = {}
+    participant_team: dict[str, int] = {}
+    for roster in (item for item in included if item.get("type") == "roster"):
+        roster_attrs = roster.get("attributes", {})
+        roster_stats = roster_attrs.get("stats") or {}
+        raw_team_id = roster_stats.get("teamId")
+        team_id = int(raw_team_id) if raw_team_id is not None else len(roster_by_id) + 1
+        raw_rank = roster_stats.get("rank")
+        rank = int(raw_rank) if raw_rank is not None else None
+        team = roster_by_id.setdefault(team_id, {"id": team_id, "rank": rank, "players": []})
+        if team["rank"] is None:
+            team["rank"] = rank
+        refs = roster.get("relationships", {}).get("participants", {}).get("data", [])
+        for ref in refs:
+            participant_id = ref.get("id")
+            if participant_id in participants_by_id:
+                participant_team[participant_id] = team_id
+
+    # Some custom match payloads omit or underfill roster participant relations.
+    # LogMatchStart still gives the TDM team for each account.
+    participant_by_player_id = {
+        str(stats.get("playerId")): participant_id
+        for participant_id, stats in participants_by_id.items() if stats.get("playerId")
+    }
+    weapons_by_account = _tdm_weapon_stats(telemetry)
+    telemetry_team: dict[str, int] = {}
+    deaths_by_name: dict[str, int] = {}
+    has_kill_v2 = any(event.get("_T") == "LogPlayerKillV2" for event in telemetry)
+    for event in telemetry:
+        if event.get("_T") == "LogMatchStart":
+            for wrapper in event.get("characters", []):
+                char = wrapper.get("character") or {}
+                account_id = char.get("accountId")
+                team_id = char.get("teamId")
+                if account_id is None or team_id is None:
+                    continue
+                participant_id = participant_by_player_id.get(str(account_id))
+                if participant_id:
+                    telemetry_team[participant_id] = int(team_id)
+        elif event.get("_T") == ("LogPlayerKillV2" if has_kill_v2 else "LogPlayerKill"):
+            victim = event.get("victim") or {}
+            victim_name = str(victim.get("name") or "").casefold()
+            if victim_name:
+                deaths_by_name[victim_name] = deaths_by_name.get(victim_name, 0) + 1
+
+    for participant_id, team_id in telemetry_team.items():
+        participant_team.setdefault(participant_id, team_id)
+
+    for participant_id, stats in participants_by_id.items():
+        team_id = participant_team.get(participant_id)
+        if team_id is None:
+            raw_place = stats.get("winPlace")
+            if raw_place is not None:
+                team_id = int(raw_place)
+                roster_by_id.setdefault(team_id, {"id": team_id, "rank": team_id, "players": []})
+                participant_team[participant_id] = team_id
+        if team_id is None:
+            continue
+        team = roster_by_id.setdefault(team_id, {"id": team_id, "rank": None, "players": []})
+        name = str(stats.get("name") or "Unknown")
+        friend = friend_by_nick.get(name.casefold())
+        player = {
+            "name": name,
+            "friend": friend is not None,
+            "friend_name": friend.name if friend else None,
+            "kills": int(stats.get("kills") or 0),
+            "damage": float(stats.get("damageDealt") or 0),
+            "headshots": int(stats.get("headshotKills") or 0),
+            "assists": int(stats.get("assists") or 0),
+            "deaths": int(stats.get("deaths") or deaths_by_name.get(name.casefold(), 0)),
+            "weapons": weapons_by_account.get(str(stats.get("playerId")), []),
+        }
+        team["players"].append(player)
+    teams = sorted(roster_by_id.values(), key=lambda team: (team["rank"] or 999, team["id"]))
+    for team in teams:
+        team["players"].sort(key=lambda player: (-player["kills"], -player["damage"], player["name"].casefold()))
+        team["kills"] = sum(player["kills"] for player in team["players"])
+        team["damage"] = sum(player["damage"] for player in team["players"])
+    if len(teams) < 2:
+        raise ValueError("TDM match is missing its two roster teams; refusing to build a misleading report")
+
+    friend_players = [player for team in teams for player in team["players"] if player["friend"]]
+    # Kills lead the TDM ranking; damage, headshots, assists, and fewer deaths break ties.
+    order = sorted(friend_players, key=lambda player: (
+        -player["kills"], -player["damage"], -player["headshots"], -player["assists"], player["deaths"],
+        player["friend_name"].casefold()))
+    winner = next((team for team in teams if team["rank"] == 1), None)
+    loser = next((team for team in teams if team is not winner), None) if winner else None
+    winner_friends = [player for player in order if winner and player in winner["players"]]
+    loser_friends = [player for player in order if loser and player in loser["players"]]
+    mvp_player = winner_friends[0] if winner_friends else None
+    ace_player = loser_friends[0] if loser_friends else None
+    featured = {id(player) for player in (mvp_player, ace_player) if player}
+    culprit_player = next((player for player in reversed(order) if id(player) not in featured), None)
+    mvp = mvp_player["friend_name"] if mvp_player else None
+    ace = ace_player["friend_name"] if ace_player else None
+    culprit = culprit_player["friend_name"] if culprit_player else None
+    rounds = _tdm_rounds(float(attrs.get("duration") or 0), telemetry, winner["id"] if winner else None,
+                         {team["id"] for team in teams})
+    featured_weapon = next((player["weapons"][0]["weapon"] for player in (mvp_player, ace_player)
+                            if player and player["weapons"]), None)
+    map_name = "Pillar Compound" if attrs.get("mapName") == "PillarCompound_Main" else _pubg_map_name(attrs.get("mapName", ""))
+    files = [
+        ("result.png", render_tdm_result(map_name, float(attrs.get("duration") or 0) / 60,
+                                         teams, rounds, featured_weapon)),
+        ("teams.png", render_tdm_comparison(teams, mvp, ace, culprit, featured_weapon)),
+    ]
+    if any(player["weapons"] for team in teams for player in team["players"]):
+        files.append(("weapons.png", render_tdm_weapons(teams, featured_weapon)))
+    facts = {
+        "모드": "팀 데스매치",
+        "맵": map_name,
+        "승리 팀": f"TEAM {winner['id']:02d}" if winner else "확인 불가",
+        "라운드 승자": [f"TEAM {item['winner']:02d}" for item in rounds] if rounds else "확인 불가",
+        "팀": [{"이름": f"TEAM {team['id']:02d}", "순위": team["rank"], "팀 킬": team["kills"],
+                "팀 피해량": round(team["damage"])} for team in teams],
+        "선수": [{"이름": player["friend_name"], "역할": "MVP" if player is mvp_player else
+                 "ACE" if player is ace_player else "범인" if player is culprit_player else "팀원",
+                 "킬": player["kills"],
+                 "딜량": round(player["damage"]), "헤드샷 킬": player["headshots"],
+                 "사망": player["deaths"], "어시스트": player["assists"],
+                 "주무기": weapon_name(player["weapons"][0]["weapon"]) if player["weapons"] else None}
+                for player in order],
+    }
+    role_names = [name for name in (mvp, ace, culprit) if name]
+    ai = _evaluate(facts, role_names, gemini_api_key, gemini_model, mode="tdm")
+    players = list(dict.fromkeys(friend_by_nick[p["name"].casefold()] for p in friend_players))
+    return _payload(players, 1 if winner else 0, files, ai), files
+
+
 def _fact(name: str, score: dict, participants: dict, story: Story | None, role: str) -> dict:
     s = participants.get(score["pubg_name"].lower(), {})
     fact = {"이름": name, "역할": role or "팀원", "킬": s.get("kills"), "기절시킴": s.get("DBNOs"),
@@ -567,27 +979,45 @@ def _payload(players: list[PubgPlayer], place: int, files: list[tuple], ai: dict
     }
 
 
-def _evaluate(facts: dict, names: list[str], api_key: str | None, model: str) -> dict:
+def _evaluate(facts: dict, names: list[str], api_key: str | None, model: str, mode: str = "squad") -> dict:
     """Gemini: 판 흐름 한 문장 + MVP·범인 한 문장씩. 실패하면 빈 값."""
     if not api_key or not names:
         return {}
     keys = ["summary"] + names
-    prompt = ("배틀그라운드 스쿼드 경기 기록이야. 친구끼리 보는 디스코드 리포트에 넣을 한마디를 써줘. "
-              "스탯은 이미 이미지로 보여주니까 숫자를 읊지 말고, 해설자나 코치처럼 느낌과 조언을 말해줘.\n"
-              "summary: 이 판을 한 문장으로 (50자 이내, 넘으면 안 됨). 무엇이 순위를 갈랐는지, 아쉬운 점이나 다음 판에 해볼 것. "
-              "기록에 없는 장면(차량 추격, 건물 싸움 등)을 지어내지 마.\n"
-              "각 선수 이름: 그 친구에게 하는 한마디 (45자 이내로 짧게, 넘으면 안 됨, 1~2문장, 이름으로 시작, 은/는 받침에 맞게). "
-              "MVP는 무엇이 좋았는지 칭찬 (예: 기가 막히네요, 든든했어요), "
-              "범인은 무엇이 아쉬웠는지와 다음에 해볼 것 (예: 다음 판엔 ~해보세요, ~에 신경 써보세요). "
-              "판단은 기록(킬, 기절, 딜량, 생존, 부활, 주무기, 감점 이유)에 근거하고, 숫자는 꼭 필요할 때 하나만.\n"
-              "좋은 예 (형식만 참고, 내용은 이 경기 기록으로): '○○는 교전마다 먼저 눕혀줬네요. 총 감각이 살아 있었어요.'\n"
-              "좋은 예: '○○는 너무 일찍 혼자 끊겼어요. 다음 판엔 팀 옆에 붙어서 움직여보세요.'\n"
-              "나쁜 예: '○○는 딜량 478과 6킬을 기록했습니다.' (숫자 나열), 예시 문장이나 표현을 그대로 베끼기\n"
-              "1등이 아닌 판의 MVP에게 '치킨을 먹었다'처럼 이긴 듯한 말은 쓰지 말고 '아쉽게 놓쳤지만 ~는 빛났어요'처럼. "
-              "일찍 전멸한 판(팀 생존이 짧음)에는 캐리·이끌었다 같은 말 대신 '그나마 ~는 버텼어요'처럼. "
-              "'일찍 끊겼다'는 죽은 순서와 생존 시간이 실제로 가장 짧을 때만.\n"
-              "이모지·줄표 금지, 존댓말(~요, ~습니다)로 친근하게.\n\n"
-              + json.dumps(facts, ensure_ascii=False))
+    intro = ("배틀그라운드 팀 데스매치 경기 기록이야. 양 팀 모두 친구들이라 제3자 중계처럼 써. "
+             "승리 팀을 정확히 말하고 '우리/상대'라는 표현은 쓰지 마. "
+             "자기장, 생존 시간, 이동 경로 같은 배틀로얄 상황은 언급하지 마.\n" if mode == "tdm" else
+             "배틀그라운드 스쿼드 경기 기록이야.\n")
+    metric_guidance = ("판단은 기록(킬, 피해량, 헤드샷, 사망, 어시스트)에 근거하고, 숫자는 꼭 필요할 때 하나만.\n"
+                       if mode == "tdm" else
+                       "판단은 기록(킬, 기절, 딜량, 생존, 부활, 주무기, 감점 이유)에 근거하고, 숫자는 꼭 필요할 때 하나만.\n")
+    result_guidance = ("팀 결과와 개인 교전 기여를 혼동하지 말고, 팀 승리를 개인 성과로 단정하지 마.\n"
+                       if mode == "tdm" else
+                       "일찍 전멸한 판(팀 생존이 짧음)에는 캐리·이끌었다 같은 말 대신 '그나마 ~는 버텼어요'처럼. "
+                       "'일찍 끊겼다'는 죽은 순서와 생존 시간이 실제로 가장 짧을 때만.\n")
+    ace_guidance = ("ACE는 패배 팀에서 가장 잘한 선수야. 패배 사실을 인정하면서 개인 활약을 짧게 칭찬해.\n"
+                    if mode == "tdm" else "")
+    placement_guidance = ("" if mode == "tdm" else
+                          "1등이 아닌 판의 MVP에게 '치킨을 먹었다'처럼 이긴 듯한 말은 쓰지 말고 '아쉽게 놓쳤지만 ~는 빛났어요'처럼. ")
+    examples = (["좋은 예: 'TEAM 01이 두 라운드를 가져가며 승리했어요.'\n",
+                 "좋은 예: '○○는 패배 팀에서도 교전 기여가 돋보였어요.'\n"] if mode == "tdm" else
+                ["좋은 예 (형식만 참고, 내용은 이 경기 기록으로): '○○는 교전마다 먼저 눕혀줬네요. 총 감각이 살아 있었어요.'\n",
+                 "좋은 예: '○○는 너무 일찍 혼자 끊겼어요. 다음 판엔 팀 옆에 붙어서 움직여보세요.'\n"])
+    prompt = "".join([
+        intro, "친구끼리 보는 디스코드 리포트에 넣을 한마디를 써줘. ",
+        "스탯은 이미 이미지로 보여주니까 숫자를 읊지 말고, 해설자나 코치처럼 느낌과 조언을 말해줘.\n",
+        "summary: 이 판을 한 문장으로 (50자 이내, 넘으면 안 됨). 무엇이 순위를 갈랐는지, 아쉬운 점이나 다음 판에 해볼 것. ",
+        "기록에 없는 장면(차량 추격, 건물 싸움 등)을 지어내지 마.\n",
+        "각 선수 이름: 그 친구에게 하는 한마디 (45자 이내로 짧게, 넘으면 안 됨, 1~2문장, 이름으로 시작, 은/는 받침에 맞게). ",
+        "MVP는 무엇이 좋았는지 칭찬 (예: 기가 막히네요, 든든했어요), ",
+        "범인은 무엇이 아쉬웠는지와 다음에 해볼 것 (예: 다음 판엔 ~해보세요, ~에 신경 써보세요). ",
+        ace_guidance, metric_guidance,
+        *examples,
+        "나쁜 예: '○○는 딜량 478과 6킬을 기록했습니다.' (숫자 나열), 예시 문장이나 표현을 그대로 베끼기\n",
+        placement_guidance,
+        result_guidance, "이모지·줄표 금지, 존댓말(~요, ~습니다)로 친근하게.\n\n",
+        json.dumps(facts, ensure_ascii=False),
+    ])
     try:
         from google import genai
         from google.genai import types

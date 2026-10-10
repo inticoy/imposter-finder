@@ -8,36 +8,45 @@
 launchd (KeepAlive)
   └─ python -m imposter_finder serve        상주 프로세스 1개
        ├─ Discord 봇 (bot.py)               /user 슬래시 명령
-       ├─ 15분 수집 루프 (collector.py)       새 그룹 매치 → 범인찾기 리포트
+       ├─ 15분 PUBG 루프 (collector.py)       새 그룹 매치 → 배그 이미지 리포트
        ├─ 15분 FC 루프 (fc_collector.py)      새 친구전 → FC 이미지 리포트
        └─ 15분 롤 루프 (lol_collector.py)     새 친구전 → 롤 이미지 리포트
             ├─ games/pubg.py · fconline.py · lol.py   게임 API·데이터센터·OP.GG
-            ├─ analysis/pubg.py             매치별 범인 판정
+            ├─ analysis/pubg.py · pubg_report.py  판정·이미지·Gemini 평가
             ├─ analysis/fc_report.py · lol_report.py  리포트 이미지 + Gemini 평가
             ├─ analysis/cards.py            공통 그리기·이미지 캐시
             ├─ storage.py                   SQLite data/imposter_finder.db
             └─ discord.py                   리포트 전송 (REST)
 ```
 
-## 15분 수집 → 범인찾기 리포트
+## PUBG: 15분 수집 → 경기 리포트
 
 1. `players.json`의 친구마다 최근 30경기를 PUBG API에서 가져와 SQLite에 쌓습니다.
 2. 아직 처리하지 않은 매치 중 다음을 걸러냅니다.
    - `PUBG_MAX_MATCH_AGE_HOURS`(기본 12시간)보다 오래된 매치
    - 등록된 친구가 2명 미만인 매치 (혼자 한 판)
-3. 남은 매치는 텔레메트리까지 받아 친구마다 평점(0~5)을 매기고, 가장 낮은 사람을 "범인"으로 리포트를 보냅니다.
+3. 남은 매치는 텔레메트리까지 받아 `DISCORD_THREAD_PUBG_DEV/PROD` 중 `BOT_ENV`에 맞는 전용 스레드에 이미지 리포트를 보냅니다.
 4. 처리한 매치는 `sent` / `too_old` / `not_a_group_match`로 기록해 다시 보내지 않습니다.
 
-**평점 감점 예시** (`analysis/pubg.py`): 0딜 −0.8, 킬·기절 없이 교전 기여 낮음 −0.4, 5분 이상 살았는데 교전 거의 없음 −0.4, 친구 중 첫 기절 −0.6, 친구 중 첫 사망 −0.8.
+| 모드 | 리포트 |
+|---|---|
+| 배틀로얄 스쿼드·듀오 | 결과·순위, 평점순 팀원 기록(MVP·범인), 이동 경로 지도, 교전 흐름, 쓴 무기. 텔레메트리가 없으면 해당 카드는 생략 |
+| 팀 데스매치 | 맵·라운드 결과, 양 팀 비교, 팀원별 무기. 승리 팀 최고 친구 MVP, 패배 팀 최고 친구 ACE, 별도로 범인 표시. 라운드별 승자는 텔레메트리와 최종 승자가 맞을 때만 추정 표시 |
+
+배틀로얄 평점 감점 예시(`analysis/pubg.py`): 0딜 −0.8, 킬·기절 없이 교전 기여 낮음 −0.4, 5분 이상 살았는데 교전 거의 없음 −0.4, 친구 중 첫 기절 −0.6, 친구 중 첫 사망 −0.8. TDM은 킬·딜량·헤드샷·어시스트·사망 순으로 비교하며 배틀로얄 평점을 쓰지 않습니다.
+
+경기 원본은 `matches`, 등록 친구와 경기 연결은 `player_matches`, 자동 알림 결과는 `match_notifications`에 저장합니다. 확인용으로 과거 경기를 수동 전송해도 자동 알림의 `sent` 기록은 바꾸지 않습니다.
+
+DB에는 PUBG 경기 상세 JSON을 저장하지만 텔레메트리 본문은 저장하지 않습니다. 오래된 경기의 텔레메트리 URL이 만료되면 경로·교전·무기 카드를 다시 만들 수 없으므로, 맵별 과거 경기 재전송에는 이 제한이 있습니다.
 
 **첫 실행과 재시작:** DB가 비어 있으면 첫 수집은 리포트 없이 기록만 합니다(지난 매치가 한꺼번에 가지 않게). DB가 있으면 꺼져 있던 동안의 최근 매치도 정상적으로 리포트합니다.
 
-## 이미지 리포트 공통 (FC · 롤)
+## 이미지 리포트 공통 (PUBG · FC · 롤)
 
 - 구역마다 PNG 한 장씩(Pillow, 가로 1000px, 한 장 높이 약 560px 이하)을 만들어 Components V2 미디어 갤러리로 보내고, 맨 아래에 **총평 / 평가** 글을 붙입니다.
 - 모든 리포트는 **@silent**, DM은 보내지 않습니다.
 - 디자인 원칙: 1px 선·테두리 없이 흐린 배경 그림 + 반투명 둥근 판 + 그늘로 구분, 도형은 4배로 그려 줄여 매끄럽게(`SS=4`). 아이콘은 Twemoji(디스코드와 같은 이모지 그림).
-- 자주 쓰는 이미지(챔피언·아이템·엠블럼·선수 얼굴·이모지)는 `data/assets/{lol,fc,common}/`에 **만료 없이** 저장합니다 (`analysis/cards.py`의 `_download`). 바뀌지 않는 그림이라 한 번 받으면 다시 받지 않습니다.
+- 자주 쓰는 이미지(지도·무기·챔피언·아이템·엠블럼·선수 얼굴·이모지)는 `data/assets/{pubg,lol,fc,common}/`에 저장해 재사용합니다.
 - 평가는 Gemini가 해설자 말투로 씁니다: 숫자 나열 대신 칭찬·아쉬움·다음 판 조언, 한 줄 52자 이내(넘으면 최대 3번 다시 받기). 프롬프트 예시에는 실제 친구 이름을 쓰지 않습니다(○○) — Gemini가 그대로 베낍니다. 실패하면 평가 없이 보냅니다.
 
 ## FC 온라인 친구전 리포트
@@ -76,7 +85,7 @@ launchd (KeepAlive)
 | 오브젝트 | 오브젝트별 우리:상대 막대, 드래곤 처치 순서 |
 | 골드 차이 | 분별 골드 차이 곡선, 그 위에 에픽 몬스터 처치 시점 (타임라인이 있을 때) |
 
-- **MVP·범인:** 우리 팀 5명 안에서 항목별 순위를 매겨 합산(딜 25, KDA 20, 킬 관여 15, 받은 피해·CS·시야·데스 각 10). 친구 중 최고가 MVP, 최저가 범인(친구가 1명이면 범인 없음).
+- **MVP·ACE·범인:** 우리 팀 5명 안에서 항목별 순위를 매겨 합산(딜 25, KDA 20, 킬 관여 15, 받은 피해·CS·시야·데스 각 10). 친구 중 최고가 승리 시 MVP, 패배 시 ACE, 최저가 범인(친구가 1명이면 범인 없음).
 - **아레나**는 순위전이라 오브젝트·골드 없이 순위(같으면 딜량)로 MVP·범인을 고르고 순위·딜·받은 피해·킬을 보여줍니다.
 - 맨 아래 **OP.GG 경기 전적 보기** 버튼: OP.GG 소환사 페이지의 JSON-LD에서 K/D/A와 끝난 시각(5분 이내)이 맞는 경기의 OP.GG 경기 ID를 찾아 링크합니다. 최근 10경기 안에 없으면 소환사 페이지로 연결합니다.
 - 카드 왼쪽 색은 승리 파랑 / 패배 빨강입니다.
@@ -98,7 +107,9 @@ launchd (KeepAlive)
 | 실행 | launchd `com.inticoy.imposter-finder`, Python 3.14 (`.venv`) |
 | 로그 | `logs/imposter-finder.log` (수집 결과), `logs/imposter-finder-error.log` (봇) |
 | 감시 | 수집 주기마다 `HEALTHCHECK_IMPOSTER_FINDER_URL` 핑, 실패 시 `/fail` (period 15분, grace 10분) |
-| 데이터 | `data/imposter_finder.db` (PUBG·FC·롤 경기, 커밋 안 함), `players.json` (커밋 안 함), `data/fc_meta/`, `data/assets/` (이미지 캐시, 커밋 안 함) |
+| 라우팅 | `.env`의 `BOT_ENV=prod`면 게임별 `_PROD` 스레드, `dev`면 `_DEV` 스레드. PUBG 전용 스레드가 없으면 예전 글 리포트 스레드로 전송 |
+| 데이터 | `data/imposter_finder.db` (PUBG·FC·롤 경기 및 자동 알림 기록, 커밋 안 함), `players.json` (커밋 안 함), `data/fc_meta/`, `data/assets/` (이미지 캐시, 커밋 안 함) |
 
 - 인터넷이 끊긴 채로 시작하면 Discord 로그인에 실패해 종료되고, launchd가 10초 뒤 다시 띄웁니다.
+- 설정이나 코드를 운영 프로세스에 반영하려면 `launchctl kickstart -k gui/$(id -u)/com.inticoy.imposter-finder`로 재시작합니다.
 - `pubg` 명령(`--list-matches` 등)은 디버깅용입니다. 이 경로는 예전 GitHub Actions용 `data/seen_matches.json`을 상태로 씁니다.

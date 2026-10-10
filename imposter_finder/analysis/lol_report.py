@@ -127,7 +127,7 @@ def render_players(columns: list[dict], rows: list[tuple], background: str | Non
         edge_shadow(img, round((c + 1) * col_w), height)
     for c, col in enumerate(columns):
         cx = int((c + 1.5) * col_w)
-        color = HIGHLIGHT if col["badge"] == "MVP" else DEFEAT if col["badge"] == "범인" else WHITE
+        color = HIGHLIGHT if col["badge"] in {"MVP", "ACE"} else DEFEAT if col["badge"] == "범인" else WHITE
         ic = icon(col["icon_url"], 56)
         if ic:
             img.paste(ic, (cx - 28, 16), ic)
@@ -295,6 +295,7 @@ def build_report(match: dict[str, Any], timeline: dict[str, Any] | None, friends
     team = [p for p in info["participants"] if p["teamId"] == team_id]
     minutes = info["gameDuration"] / 60
     won = mine[0]["win"]
+    best_badge = "MVP" if won else "ACE"
     stats = _team_scores(team, minutes)
     mvp = max(mine, key=lambda p: stats[p["puuid"]]["score"])
     culprit = min(mine, key=lambda p: stats[p["puuid"]]["score"]) if len(mine) > 1 else None
@@ -305,7 +306,7 @@ def build_report(match: dict[str, Any], timeline: dict[str, Any] | None, friends
                 "icon_url": ddragon.champion_icon(p["championName"]),
                 "art_url": f"https://ddragon.leagueoflegends.com/cdn/img/champion/loading/{p['championName']}_0.jpg",
                 "kda": f"{p['kills']}/{p['deaths']}/{p['assists']}",
-                "badge": "MVP" if p is mvp else "범인" if p is culprit else None} for p in cols]
+                "badge": best_badge if p is mvp else "범인" if p is culprit else None} for p in cols]
     rows = [("딜량", [p["totalDamageDealtToChampions"] for p in cols], lambda v: f"{v / 1000:.1f}k"),
             ("받은 피해", [p["totalDamageTaken"] for p in cols], lambda v: f"{v / 1000:.1f}k"),
             ("KDA", [stats[p["puuid"]]["kda"] for p in cols], lambda v: f"{v:.1f}"),
@@ -336,7 +337,8 @@ def build_report(match: dict[str, Any], timeline: dict[str, Any] | None, friends
 
     facts = {"결과": "승리" if won else "패배", "오브젝트(우리:상대)": {o[0]: f"{o[1]}:{o[2]}" for o in objectives},
              "골드 흐름(우리 팀 기준)": _gold_story(diffs) if diffs else "없음",
-             "선수": [_player_fact(p, name(p), "MVP" if p is mvp else "범인", stats, ddragon) for p in (mvp, culprit) if p]}
+             "선수": [_player_fact(p, name(p), best_badge if p is mvp else "범인", stats, ddragon)
+                    for p in (mvp, culprit) if p]}
     ai = _evaluate(facts, [name(p) for p in (mvp, culprit) if p], gemini_api_key, gemini_model)
     return _payload(mine, friends, won, files, ai, opgg_link([mvp] + [p for p in mine if p is not mvp], info)), files
 
@@ -361,11 +363,12 @@ def _build_arena(match: dict, friends: dict[str, Friend], ddragon: DDragon, key:
     place = lambda p: p.get("placement") or p.get("subteamPlacement") or 8
     ranked = sorted(mine, key=lambda p: (place(p), -p["totalDamageDealtToChampions"]))
     mvp, culprit = ranked[0], (ranked[-1] if len(ranked) > 1 else None)
+    best_badge = "MVP" if place(mvp) <= 4 else "ACE"
     name = lambda p: friends[p["puuid"]].name
     columns = [{"name": name(p), "champion": ddragon.champion_name(p["championName"]),
                 "icon_url": ddragon.champion_icon(p["championName"]),
                 "kda": f"{p['kills']}/{p['deaths']}/{p['assists']}",
-                "badge": "MVP" if p is mvp else "범인" if p is culprit else None} for p in ranked]
+                "badge": best_badge if p is mvp else "범인" if p is culprit else None} for p in ranked]
     rows = [("순위", [9 - place(p) for p in ranked], lambda v: f"{9 - v}등"),
             ("딜량", [p["totalDamageDealtToChampions"] for p in ranked], lambda v: f"{v / 1000:.1f}k"),
             ("받은 피해", [p["totalDamageTaken"] for p in ranked], lambda v: f"{v / 1000:.1f}k"),
@@ -376,7 +379,7 @@ def _build_arena(match: dict, friends: dict[str, Friend], ddragon: DDragon, key:
                                           {"label": f"친구 {len(mine)}명", "kills": None,
                                            "icons": [(c["icon_url"], True) for c in columns]}, None)),
              ("players.png", render_players(columns, rows, splash))]
-    facts = {"모드": "아레나 (2인 1조, 순위전)", "선수": [{"이름": name(p), "역할": "MVP" if p is mvp else "범인",
+    facts = {"모드": "아레나 (2인 1조, 순위전)", "선수": [{"이름": name(p), "역할": best_badge if p is mvp else "범인",
                                                      "순위": place(p), "딜량": p["totalDamageDealtToChampions"],
                                                      "KDA": f"{p['kills']}/{p['deaths']}/{p['assists']}"}
                                                     for p in (mvp, culprit) if p]}
@@ -416,13 +419,13 @@ def _evaluate(facts: dict, names: list[str], api_key: str | None, model: str) ->
               "summary: 이 판을 한 문장으로 (50자 이내, 넘으면 안 됨). 무엇이 승부를 갈랐는지, 아쉬운 점이나 다음 판에 해볼 것. "
               "골드 흐름과 오브젝트 기록이 근거지만 숫자는 쓰지 마. 기록에 없는 장면(한타, 갱킹 등)을 지어내지 마.\n"
               "각 선수 이름: 그 친구에게 하는 한마디 (45자 이내로 짧게, 넘으면 안 됨, 1~2문장, 이름으로 시작, 은/는 받침에 맞게). "
-              "MVP는 무엇이 좋았는지 칭찬 (예: 기가 막히네요, 오늘 캐리했습니다), "
+              "MVP는 이긴 팀의 활약을 칭찬하고, ACE는 진 팀에서도 돋보인 플레이를 칭찬해. "
               "범인은 무엇이 아쉬웠는지와 다음에 해볼 것 (예: 다음 판엔 ~해보세요, ~에 신경 써보세요). "
               "판단은 기록(포지션, 데스, 시야, 딜량, 킬 관여 등)에 근거하고, 숫자는 꼭 필요할 때 하나만.\n"
               "좋은 예 (형식만 참고, 내용은 이 경기 기록으로): '○○는 앞라인과 딜을 다 챙겼네요. 오늘 판은 ○○가 끌고 갔습니다.'\n"
               "좋은 예: '○○는 너무 자주 끊겼어요. 다음 판엔 합류 전에 시야부터 잡아보세요.'\n"
               "나쁜 예: '○○는 딜량 44,621과 킬 관여 75%를 기록했습니다.' (숫자 나열), 예시 문장이나 표현을 그대로 베끼기\n"
-              "진 판의 MVP에게 '캐리했다'처럼 이긴 듯한 말은 쓰지 말고 '졌지만 ~는 빛났어요'처럼. "
+              "ACE에게 '이겼다'처럼 승리한 듯한 말은 쓰지 말고 '졌지만 ~는 빛났어요'처럼. "
               "한타·갱킹·라인전 같은 장면 묘사는 기록에 없으니 쓰지 마.\n"
               "이모지·줄표 금지, 존댓말(~요, ~습니다)로 친근하게.\n\n"
               + json.dumps(facts, ensure_ascii=False))

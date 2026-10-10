@@ -32,8 +32,14 @@ body{margin:0;background:var(--bg);color:var(--text);
 main{max-width:1180px;margin:0 auto;padding:32px 16px 56px}
 h1{margin:0 0 6px;font-size:26px}
 .sum{margin:0 0 20px;color:var(--muted)}
-.cols{display:grid;grid-template-columns:repeat(2,1fr);gap:18px;align-items:start}
-@media (max-width:760px){.cols{grid-template-columns:1fr}}
+.cols,.game-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;align-items:start}
+.game-section{border:1px solid var(--line);border-top:4px solid var(--game);border-radius:16px;padding:18px;background:var(--card);margin-bottom:18px}
+.game-section.pubg{--game:#d3a42b}.game-section.fc{--game:#38a86f}.game-section.lol{--game:#598bd4}
+.game-head{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin:0 0 14px}
+.game-head h2{font-size:20px;margin:0}.game-head p{font-size:13px;color:var(--muted);margin:0}
+.game-section .col{border-radius:11px;background:var(--bg);height:100%}
+.game-grid .game-section{height:100%;margin-bottom:0}
+@media (max-width:760px){.cols,.game-grid{grid-template-columns:1fr}.game-grid .game-section{height:auto}}
 .col{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 16px}
 .col h2{margin:0 0 2px;font-size:18px}
 .col .sub{margin:0 0 16px;color:var(--muted);font-size:13px}
@@ -74,7 +80,7 @@ code{background:var(--neutral-bg);padding:1px 5px;border-radius:4px;font-size:.9
 <body>
 <main>
   <h1>범인찾기 동작 흐름</h1>
-  <p class="sum">맥의 launchd가 상주 프로세스 하나(<code>serve</code>)를 돌립니다. 그 안에서 15분마다 PUBG 그룹 매치를 찾아 범인을 가리고, <code>/user</code> 명령에 전적 감정서로 답합니다. FC 온라인·롤 친구전이 끝나면 중계 화면 같은 이미지 리포트와 AI 총평을 조용히(@silent) 올립니다. (2026-10-10)</p>
+  <p class="sum">launchd가 <code>serve</code> 하나를 상주시킵니다. 각 게임을 15분마다 수집해 게임별 Discord 스레드에 이미지 리포트를 올립니다. PUBG는 <code>/user</code> 전적 감정서도 제공합니다. (2026-10-10)</p>
 
   <div class="legend">
     <span><i style="background:var(--neutral-bg);border-color:var(--neutral-bd)"></i>일반</span>
@@ -84,9 +90,11 @@ code{background:var(--neutral-bg);padding:1px 5px;border-radius:4px;font-size:.9
     <span><i style="background:var(--fail-bg);border-color:var(--fail-bd)"></i>건너뜀 / 실패</span>
   </div>
 
-  <div class="cols">
+  <section class="game-section pubg">
+    <div class="game-head"><h2>🪂 PUBG: BATTLEGROUNDS</h2><p>그룹 경기 리포트 · 전적 감정서</p></div>
+    <div class="cols">
     <section class="col">
-      <h2>🕵️ 범인찾기 리포트</h2>
+      <h2>경기 리포트</h2>
       <p class="sub">15분 수집 루프 · <code>collector.py</code></p>
       <div class="flow">
         <div class="node n-blue">친구마다 최근 30경기 조회<small>players.json의 PUBG 닉네임</small></div>
@@ -98,20 +106,22 @@ code{background:var(--neutral-bg);padding:1px 5px;border-radius:4px;font-size:.9
         <div class="branches">
           <div class="br"><div class="lbl">12시간 넘음 / 친구 1명뿐</div>
             <div class="node n-fail">건너뜀<small>too_old / not_a_group_match</small></div></div>
-          <div class="br"><div class="lbl">친구 2명 이상</div>
+          <div class="br"><div class="lbl">친구 2명 이상 · 첫 수집 아님</div>
             <div class="node n-blue">텔레메트리 받기</div>
             <div class="arrow"></div>
-            <div class="node n-ai">친구별 평점 0~5<small>0딜·첫 사망 등 감점</small></div></div>
+            <div class="node n-ai">모드별 분석<small>배틀로얄 평점 / TDM 팀·라운드</small></div></div>
         </div>
         <div class="arrow"></div>
-        <div class="node n-ok">가장 낮은 사람 = 범인 리포트<small>범인찾기 thread</small></div>
+        <div class="node">이미지 리포트 + Gemini 평가<small>배틀로얄: 결과·팀 기록·경로·교전·무기<br>TDM: 라운드 결과·양 팀 비교·무기, MVP·ACE·범인</small></div>
+        <div class="arrow"></div>
+        <div class="node n-ok">PUBG 스레드에 @silent 전송<small>prod=REAL · dev=BETA</small></div>
         <div class="arrow"></div>
         <div class="node">sent 기록 → Healthchecks 핑</div>
       </div>
     </section>
 
     <section class="col">
-      <h2>📋 /user 전적 감정서</h2>
+      <h2>/user 전적 감정서</h2>
       <p class="sub">슬래시 명령 · <code>bot.py</code></p>
       <div class="flow">
         <div class="node">/user 이름 [판수]<small>이름 자동완성, 기본 30판</small></div>
@@ -132,9 +142,14 @@ code{background:var(--neutral-bg);padding:1px 5px;border-radius:4px;font-size:.9
         <div class="node n-ok">감정서 embed + 방사형 그래프</div>
       </div>
     </section>
+    </div>
+  </section>
 
+  <div class="game-grid">
+  <section class="game-section fc">
+    <div class="game-head"><h2>⚽ FC Online</h2><p>친구 간 클래식 1on1</p></div>
     <section class="col">
-      <h2>⚽ FC 친구전 리포트</h2>
+      <h2>친구전 리포트</h2>
       <p class="sub">15분 FC 루프 · <code>fc_collector.py</code></p>
       <div class="flow">
         <div class="node n-blue">친구마다 클래식 1on1 최근 20경기<small>NEXON Open API, 하루 900회에서 멈춤</small></div>
@@ -157,9 +172,12 @@ code{background:var(--neutral-bg);padding:1px 5px;border-radius:4px;font-size:.9
         <div class="node n-ok">FC thread에 조용히 (prod=REAL)<small>두 사람 태그, DM 없음</small></div>
       </div>
     </section>
+  </section>
 
+  <section class="game-section lol">
+    <div class="game-head"><h2>⚔️ League of Legends</h2><p>사람 기준 친구 경기 · 여러 계정 지원</p></div>
     <section class="col">
-      <h2>🎮 롤 친구전 리포트</h2>
+      <h2>친구전 리포트</h2>
       <p class="sub">15분 롤 루프 · <code>lol_collector.py</code></p>
       <div class="flow">
         <div class="node n-blue">계정마다 최근 10경기 ID<small>Riot API, 한 사람 여러 계정</small></div>
@@ -170,9 +188,9 @@ code{background:var(--neutral-bg);padding:1px 5px;border-radius:4px;font-size:.9
         <div class="arrow"></div>
         <div class="branches">
           <div class="br"><div class="lbl">아레나</div>
-            <div class="node">순위로 MVP·범인<small>배너·선수 2장</small></div></div>
+            <div class="node">순위로 MVP/ACE·범인<small>배너·선수 2장</small></div></div>
           <div class="br"><div class="lbl">협곡·칼바람 등</div>
-            <div class="node n-ai">팀 안 항목별 순위 합산<small>딜·KDA·킬 관여·CS·시야…</small></div>
+            <div class="node n-ai">팀 안 항목별 순위 합산<small>승리 시 MVP · 패배 시 ACE</small></div>
             <div class="arrow"></div>
             <div class="node">이미지 4장<small>결과·선수·오브젝트·골드 차이</small></div></div>
         </div>
@@ -182,6 +200,7 @@ code{background:var(--neutral-bg);padding:1px 5px;border-radius:4px;font-size:.9
         <div class="node n-ok">롤 thread에 조용히<small>OP.GG 경기 전적 버튼</small></div>
       </div>
     </section>
+  </section>
   </div>
 
   <h3>쓰는 것</h3>
@@ -190,8 +209,9 @@ code{background:var(--neutral-bg);padding:1px 5px;border-radius:4px;font-size:.9
       <tbody>
         <tr><th>실행</th><td>launchd <code>com.inticoy.imposter-finder</code> (KeepAlive), Python 3.14</td></tr>
         <tr><th>게임 API</th><td>PUBG Developer API · NEXON Open API (FC, <code>test_</code> 키 하루 1,000회) · Riot API (개인 키 2분 100회) · FC 데이터센터·OP.GG 웹 (비공식)</td></tr>
-        <tr><th>저장</th><td><code>data/imposter_finder.db</code>(PUBG·FC·롤 경기, 알림 기록, API 사용량), <code>players.json</code>(친구·계정), <code>data/assets/</code>(이미지 영구 캐시) — 커밋 안 함</td></tr>
-        <tr><th>AI</th><td>Gemini <code>gemini-3.5-flash-lite</code> — FC·롤 경기마다 총평·평가</td></tr>
+        <tr><th>라우팅</th><td><code>BOT_ENV=prod</code> → 게임별 <code>DISCORD_THREAD_{PUBG,FC,LOL}_PROD</code>, dev → <code>_DEV</code>. PUBG 전용 스레드가 없으면 예전 글 리포트 경로 사용</td></tr>
+        <tr><th>저장</th><td><code>data/imposter_finder.db</code>(PUBG·FC·롤 경기, 자동 알림 기록, API 사용량), <code>players.json</code>(친구·계정), <code>data/assets/</code>(이미지 캐시) — 커밋 안 함</td></tr>
+        <tr><th>AI</th><td>Gemini <code>gemini-3.5-flash-lite</code> — PUBG·FC·롤 총평·평가</td></tr>
         <tr><th>감시</th><td>수집 주기마다 Healthchecks 핑, 실패 시 <code>/fail</code></td></tr>
         <tr><th>로그</th><td><code>logs/imposter-finder.log</code>, <code>logs/imposter-finder-error.log</code></td></tr>
       </tbody>
@@ -204,7 +224,7 @@ code{background:var(--neutral-bg);padding:1px 5px;border-radius:4px;font-size:.9
       <tbody>
         <tr><th>v1</th><td>GitHub Actions + cron-job.org, <code>seen_matches.json</code> 커밋 (2026-05 ~ 08)</td></tr>
         <tr><th>v2</th><td>맥 상주 봇 + SQLite + <code>/user</code> (2026-08 ~, 10-09에 Python 3.14·로그 정리)</td></tr>
-        <tr><th>v3</th><td class="good">FC 친구전 리포트 (2026-10-09~) · 롤 친구전 리포트 (10-10~) · FC·롤 이미지 리포트 (10-10~) · 배그 이미지 리포트·영입 알림·<code>@멘션</code> 자연어 (계획)</td></tr>
+        <tr><th>v3</th><td class="good">FC 친구전 리포트 (2026-10-09~) · 롤 친구전 및 PUBG 이미지 리포트 (10-10~) · 영입 알림·<code>@멘션</code> 자연어 (계획)</td></tr>
       </tbody>
     </table>
   </div>
