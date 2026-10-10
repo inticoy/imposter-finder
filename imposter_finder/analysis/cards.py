@@ -41,7 +41,8 @@ def png(img: Image.Image) -> bytes:
 ASSET_DIR = Path(__file__).resolve().parents[2] / "data" / "assets"
 # 이미지 출처 → 게임 폴더 (data/assets/lol/..., data/assets/fc/...)
 GAME_OF_HOST = {"ddragon.leagueoflegends.com": "lol", "raw.communitydragon.org": "lol",
-                "fco.dn.nexoncdn.co.kr": "fc", "ssl.nexon.com": "fc"}
+                "fco.dn.nexoncdn.co.kr": "fc", "ssl.nexon.com": "fc", "cdn.jsdelivr.net": "common"}
+TWEMOJI = "https://cdn.jsdelivr.net/gh/jdecked/twemoji@15.1.0/assets/72x72"  # 디스코드가 쓰는 이모지 그림
 
 
 def asset_path(url: str) -> Path:
@@ -274,3 +275,11 @@ def backdrop(img: Image.Image, url: str | None, box: tuple[int, int, int, int], 
         ramp = Image.linear_gradient("L").resize((w, h)).point(lambda v: int(v * fade))  # 위 0 → 아래 fade
         art = Image.composite(Image.new("RGB", (w, h), BG), art, ramp)
     img.paste(art, (x0, y0))
+
+
+def emoji(img: Image.Image, char: str, cx: float, cy: float, size: int) -> None:
+    """디스코드와 같은 모양의 이모지(Twemoji)를 그림에 넣는다. 이미지 글꼴에는 이모지가 없다."""
+    code = "-".join(f"{ord(c):x}" for c in char if ord(c) != 0xFE0F)
+    pic = icon(f"{TWEMOJI}/{code}.png", size, radius=0)
+    if pic is not None:
+        img.paste(pic, (round(cx - size / 2), round(cy - size / 2)), pic)
