@@ -19,7 +19,7 @@ BG, TRACK, LABEL, WHITE = (13, 15, 19), (48, 52, 60), (150, 156, 168), (245, 247
 PITCH, PITCH_DARK, LINE = (24, 74, 46), (19, 62, 38), (255, 255, 255)
 FALLBACK_LEFT, FALLBACK_RIGHT = (56, 128, 255), (245, 245, 245)
 ACCENT = 0x2ECC71
-STYLE = {"glow": 0.22, "crest_alpha": 0.07}  # 바탕에 팀 색 빛과 큰 엠블럼을 얼마나 진하게 (변형 비교용)
+STYLE = {"glow": 0.12, "crest_alpha": 0.04}  # 바탕에 팀 색 빛과 큰 엠블럼을 얼마나 진하게 (변형 비교용)
 MAX_LINE_CHARS, MAX_TRIES = 52, 3
 
 
