@@ -5,15 +5,18 @@ import urllib.request
 from functools import lru_cache
 from io import BytesIO
 
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
+from PIL import Image, ImageChops, ImageDraw, ImageFont
 
 FONT = "/System/Library/Fonts/AppleSDGothicNeo.ttc"  # index 4 SemiBold, 6 Bold
 WIDTH, PAD = 1000, 32
-# 중계 그래픽 톤: 짙은 남색 바탕, 우리 팀 민트 · 상대 코럴, 1등은 금색
-BG, PANEL, TRACK, GRID = (16, 20, 29), (24, 29, 41), (40, 46, 62), (31, 37, 51)
-GOLD, RED, GREEN = (245, 190, 75), (244, 86, 108), (54, 212, 156)
-SLATE = BLUE = (112, 128, 170)  # 1등이 아닌 막대
-LABEL, WHITE = (150, 160, 182), (240, 243, 248)
+# 롤 클라이언트 CSS 색 (rcp-fe-lol-match-history / postgame)
+BG, PANEL, TRACK, GRID = (1, 10, 19), (30, 35, 40), (60, 60, 65), (30, 40, 45)  # #010A13 #1E2328 #3C3C41 #1E282D
+SKY_TOP, SKY_BOTTOM, FRAME = (28, 61, 98), (12, 27, 45), (73, 97, 125)  # 상세 화면 배경 #1C3D62→#0C1B2D, 테두리 #49617D
+ALLY, ENEMY = (71, 136, 182), (230, 33, 66)  # 상세 그래프 팀 색 #4788B6 #E62142
+VICTORY, DEFEAT = (10, 203, 230), (255, 35, 69)  # 전적 승리 #0ACBE6 · 패배 #FF2345
+GOLD, HIGHLIGHT, GOLD_DARK = (200, 155, 60), (250, 190, 10), (70, 55, 20)  # #C89B3C · 본인 강조 #FABE0A · #463714
+SLATE = (91, 90, 86)  # #5B5A56 1등이 아닌 막대
+LABEL, WHITE = (160, 155, 140), (240, 230, 210)  # #A09B8C #F0E6D2
 SS = 4  # 막대·그래프는 크게 그려 줄여서 가장자리를 매끄럽게
 
 
@@ -112,9 +115,9 @@ def split_bar(img: Image.Image, x0: float, x1: float, y: float, left: float, rig
     if total:
         split = x0 + (x1 - x0) * left / total
         if left:
-            bar(img, (x0, y, split - 2, y + height), GREEN if left >= right else shade(GREEN, 0.4), dim_side="left")
+            bar(img, (x0, y, split - 2, y + height), ALLY if left >= right else shade(ALLY, 0.4), dim_side="left")
         if right:
-            bar(img, (split + 2, y, x1, y + height), RED if right >= left else shade(RED, 0.4), dim_side="right")
+            bar(img, (split + 2, y, x1, y + height), ENEMY if right >= left else shade(ENEMY, 0.4), dim_side="right")
     mid = (x0 + x1) / 2
     ImageDraw.Draw(img).line((mid, y - 4, mid, y + height + 3), fill=LABEL, width=1)
 
@@ -129,23 +132,45 @@ def header(draw: ImageDraw.ImageDraw, title: str, legend: list[tuple[tuple, str]
         x -= 18
         draw.rounded_rectangle((x, 26, x + 11, 37), radius=3, fill=color)
         x -= 20
-    draw.line((PAD, 58, WIDTH - PAD, 58), fill=GRID, width=1)
+    draw.line((PAD, 58, WIDTH - PAD, 58), fill=GOLD_DARK, width=1)
     return 80
 
 
-def broadcast_bg(img: Image.Image) -> None:
-    """중계 그래픽 바탕: 왼쪽 우리 팀색 · 오른쪽 상대색 은은한 빛 + 옅은 사선 무늬."""
-    w, h = img.size
-    glow = Image.new("RGB", (w, h), BG)
-    g = ImageDraw.Draw(glow)
-    g.ellipse((-w * 0.3, -h * 0.6, w * 0.3, h * 1.6), fill=shade(GREEN, 0.13))
-    g.ellipse((w * 0.7, -h * 0.6, w * 1.3, h * 1.6), fill=shade(RED, 0.13))
-    glow = glow.filter(ImageFilter.GaussianBlur(min(w, h) * 0.45))
-    stripes = Image.new("L", (w, h), 0)
-    sd = ImageDraw.Draw(stripes)
-    for x in range(-h, w, 16):
-        sd.line((x, h, x + h, 0), fill=5, width=2)
-    img.paste(Image.composite(Image.new("RGB", (w, h), WHITE), glow, stripes))
+def client_bg(img: Image.Image, box: tuple[int, int, int, int] | None = None) -> None:
+    """롤 클라이언트 경기 상세 화면 바탕: 위 #1C3D62 → 가운데부터 #0C1B2D, 테두리 #49617D."""
+    x0, y0, x1, y1 = box or (0, 0, *img.size)
+    w, h = x1 - x0, y1 - y0
+    ramp = Image.linear_gradient("L").resize((w, h)).point(lambda v: min(255, int(v / 0.48)))  # 아래 52%는 진한 색
+    img.paste(Image.composite(Image.new("RGB", (w, h), SKY_BOTTOM), Image.new("RGB", (w, h), SKY_TOP), ramp), (x0, y0))
+    if box is None:
+        ImageDraw.Draw(img).rectangle((0, 0, w - 1, h - 1), outline=FRAME, width=1)
+
+
+def medallion(img: Image.Image, cx: float, cy: float, d: int, url: str | None, ring: tuple,
+              crop: float = 0.8, ring_w: float = 2.5) -> None:
+    """원형 아이콘 + 팀색 고리. 미니맵 아이콘은 자체 테두리가 있어 가운데만 잘라 쓴다. 크게 그려 줄여서 매끄럽게."""
+    size = d * SS
+    layer = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    disc = Image.new("L", (size, size), 0)
+    ImageDraw.Draw(disc).ellipse((0, 0, size - 1, size - 1), fill=255)
+    layer.paste(Image.new("RGBA", (size, size), BG + (255,)), (0, 0), disc)
+    src = None
+    if url:
+        try:
+            src = Image.open(BytesIO(_download(url))).convert("RGBA")
+        except Exception:
+            src = None
+    if src is not None:
+        bbox = src.getchannel("A").getbbox()
+        if bbox:
+            src = src.crop(bbox)
+        w, h = src.size
+        mx, my = w * (1 - crop) / 2, h * (1 - crop) / 2
+        src = src.crop((round(mx), round(my), round(w - mx), round(h - my))).resize((size, size), Image.LANCZOS)
+        layer.paste(src, (0, 0), ImageChops.multiply(src.getchannel("A"), disc))
+    ImageDraw.Draw(layer).ellipse((0, 0, size - 1, size - 1), outline=ring, width=round(ring_w * SS))
+    layer = layer.resize((d, d), Image.LANCZOS)
+    img.paste(layer, (round(cx - d / 2), round(cy - d / 2)), layer)
 
 
 def grade_color(grade: int) -> tuple:

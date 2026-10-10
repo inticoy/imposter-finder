@@ -9,9 +9,10 @@ from io import BytesIO
 
 from PIL import Image, ImageChops, ImageDraw
 
-from imposter_finder.analysis.cards import (BG, GOLD, GREEN, GRID, LABEL, PAD, PANEL, RED, SLATE, SS, TRACK, WHITE,
-                                            WIDTH, _download, backdrop, bar, broadcast_bg, canvas, font, header, icon,
-                                            pill, png, shade, split_bar)
+from imposter_finder.analysis.cards import (ALLY, BG, DEFEAT, ENEMY, GOLD, GOLD_DARK, GRID, HIGHLIGHT, LABEL, PAD,
+                                            SLATE, SS, TRACK, VICTORY, WHITE, WIDTH, _download, backdrop, bar,
+                                            client_bg, canvas, font, header, icon, medallion, pill, png, shade,
+                                            split_bar)
 from imposter_finder.games.lol import ARENA_QUEUES, QUEUE_NAMES, DDragon
 
 ACCENT_WIN, ACCENT_LOSE = 0x2ECC71, 0xED4245
@@ -70,7 +71,7 @@ def render_banner(won: bool, mode: str, minutes: int, background: str | None,
             img.paste(Image.blend(art, Image.new("RGB", art.size, BG), 0.72))
         except Exception:
             pass
-    color = GREEN if won else RED
+    color = VICTORY if won else DEFEAT
     cx = WIDTH // 2
     dr.rectangle((0, 0, WIDTH, 5), fill=color)
 
@@ -83,7 +84,7 @@ def render_banner(won: bool, mode: str, minutes: int, background: str | None,
         sign = -1 if align == "left" else 1
         edge = PAD if align == "left" else WIDTH - PAD
         anchor = "la" if align == "left" else "ra"
-        dr.text((edge, 20), info["label"], font=font(18), fill=GREEN if align == "left" else RED, anchor=anchor)
+        dr.text((edge, 20), info["label"], font=font(18), fill=ALLY if align == "left" else ENEMY, anchor=anchor)
         if info.get("kills") is not None:
             dr.text((edge, 44), str(info["kills"]), font=font(46, 6), fill=WHITE, anchor=anchor)
             kills_w = dr.textlength(str(info["kills"]), font=font(46, 6))
@@ -98,7 +99,7 @@ def render_banner(won: bool, mode: str, minutes: int, background: str | None,
             if champ:
                 img.paste(champ, (int(x), 120), champ)
             if is_friend:
-                dr.rounded_rectangle((x - 2, 118, x + size + 1, 120 + size + 1), radius=10, outline=GREEN, width=2)
+                dr.rounded_rectangle((x - 2, 118, x + size + 1, 120 + size + 1), radius=10, outline=HIGHLIGHT, width=2)
 
     side(left, "left")
     if right:
@@ -112,19 +113,18 @@ def render_players(columns: list[dict], rows: list[tuple]) -> bytes:
     height = head_h + row_h * len(rows) + 12
     img, dr = canvas(height)
     col_w = WIDTH / (len(columns) + 1)
-    # 라벨 칸: 우리 팀색이 은은한 패널
-    panel = Image.linear_gradient("L").resize((round(col_w) - 2, height)).point(lambda v: 255 - v // 2)
-    img.paste(Image.composite(Image.new("RGB", panel.size, shade(GREEN, 0.12)), Image.new("RGB", panel.size, PANEL),
-                              panel), (0, 0))
+    client_bg(img, (0, 0, round(col_w), height))  # 라벨 칸: 클라이언트 상세 화면 바탕
     dr.text((24, 96), "선수 비교", font=font(22, 6), fill=WHITE)
     dr.text((24, 128), "점수 높은 순", font=font(15), fill=LABEL)
     for c, col in enumerate(columns):
-        x0 = round((c + 1) * col_w) + 2
-        x1 = WIDTH if c == len(columns) - 1 else round((c + 2) * col_w) - 2
-        backdrop(img, col.get("art_url"), (x0, 0, x1, height), dim=0.68, focus_y=0.1, fade=0.8)
+        x0, x1 = round((c + 1) * col_w), round((c + 2) * col_w)  # 칸 사이 틈 없이
+        backdrop(img, col.get("art_url"), (x0, 0, x1, height), dim=0.66, focus_y=0.1, fade=0.75)
+    for c in range(len(columns)):  # 칸 경계는 클라이언트 금색 선
+        x = round((c + 1) * col_w)
+        dr.line((x, 0, x, height), fill=GOLD_DARK, width=1)
     for c, col in enumerate(columns):
         cx = int((c + 1.5) * col_w)
-        color = GOLD if col["badge"] == "MVP" else RED if col["badge"] == "범인" else WHITE
+        color = HIGHLIGHT if col["badge"] == "MVP" else DEFEAT if col["badge"] == "범인" else WHITE
         ic = icon(col["icon_url"], 56)
         if ic:
             img.paste(ic, (cx - 28, 16), ic)
@@ -151,8 +151,8 @@ def render_objectives(objectives: list[tuple], dragons: list[tuple[str, bool]]) 
     """objectives: [(이름, 우리, 상대, 아이콘)], dragons: [(아이콘 URL, 우리 팀이 가져갔나)] 시간 순서."""
     height = 216 + (86 if dragons else 0)
     img, dr = canvas(height)
-    broadcast_bg(img)
-    top = header(dr, "오브젝트", [(GREEN, "우리 팀"), (RED, "상대 팀")])
+    client_bg(img)
+    top = header(dr, "오브젝트", [(ALLY, "우리 팀"), (ENEMY, "상대 팀")])
     cell = (WIDTH - PAD * 2) / len(objectives)
     for n, (label, ours, theirs, icon_url) in enumerate(objectives):
         cx = int(PAD + n * cell + cell / 2)
@@ -160,20 +160,16 @@ def render_objectives(objectives: list[tuple], dragons: list[tuple[str, bool]]) 
         if ic:
             img.paste(ic, (cx - 19, top), ic)
         dr.text((cx, top + 46), label, font=font(15), fill=LABEL, anchor="ma")
-        dr.text((cx - 8, top + 70), str(ours), font=font(26, 6), fill=GREEN if ours > theirs else WHITE, anchor="ra")
+        dr.text((cx - 8, top + 70), str(ours), font=font(26, 6), fill=ALLY if ours > theirs else WHITE, anchor="ra")
         dr.text((cx, top + 70), ":", font=font(22, 4), fill=LABEL, anchor="ma")
-        dr.text((cx + 8, top + 70), str(theirs), font=font(26, 6), fill=RED if theirs > ours else WHITE, anchor="la")
+        dr.text((cx + 8, top + 70), str(theirs), font=font(26, 6), fill=ENEMY if theirs > ours else WHITE, anchor="la")
         split_bar(img, cx - cell / 2 + 18, cx + cell / 2 - 18, top + 112, ours, theirs)
     if dragons:  # 드래곤 순서: 누가 어떤 드래곤을 먹었나
         y = 226
-        dr.line((PAD, y - 20, WIDTH - PAD, y - 20), fill=GRID, width=1)
+        dr.line((PAD, y - 20, WIDTH - PAD, y - 20), fill=GOLD_DARK, width=1)
         dr.text((PAD, y + 11), "드래곤 순서", font=font(18), fill=LABEL)
         for n, (url, ours) in enumerate(dragons):
-            x = PAD + 130 + n * 54
-            dr.rounded_rectangle((x - 3, y - 3, x + 43, y + 43), radius=10, outline=GREEN if ours else RED, width=3)
-            ic = icon(url, 40, radius=8)
-            if ic:
-                img.paste(ic, (x, y), ic)
+            medallion(img, PAD + 154 + n * 56, y + 21, 46, url, ALLY if ours else ENEMY, ring_w=3)
     return png(img)
 
 
@@ -181,8 +177,8 @@ def render_gold(diffs: list[int], events: list[tuple[float, str, bool]]) -> byte
     """우리 팀 기준 골드 차이 곡선. events: [(분, 아이콘 URL, 우리 팀이 가져갔나)] 바론·드래곤 등."""
     height = 390
     img, dr = canvas(height)
-    broadcast_bg(img)
-    header(dr, "골드 차이", [(GREEN, "우리 팀 우세"), (RED, "상대 우세")])
+    client_bg(img)
+    header(dr, "골드 차이", [(ALLY, "우리 팀 우세"), (ENEMY, "상대 우세")])
     gx0, gx1, gy0, gy1 = PAD + 62, WIDTH - PAD - 70, 124, height - 48
     mid, half = (gy0 + gy1) / 2, (gy1 - gy0) / 2
     span = max(max(abs(d) for d in diffs), 1000)
@@ -194,22 +190,19 @@ def render_gold(diffs: list[int], events: list[tuple[float, str, bool]]) -> byte
     for minute in range(0, len(diffs), 5):
         dr.line((px(minute), gy0, px(minute), gy1), fill=GRID, width=1)
         dr.text((px(minute), gy1 + 12), f"{minute}분", font=font(15), fill=LABEL, anchor="ma")
-    dr.text((gx0 - 12, py(span)), f"+{span / 1000:.1f}k", font=font(15), fill=GREEN, anchor="rm")
+    dr.text((gx0 - 12, py(span)), f"+{span / 1000:.1f}k", font=font(15), fill=ALLY, anchor="rm")
     dr.text((gx0 - 12, mid), "0", font=font(15), fill=LABEL, anchor="rm")
-    dr.text((gx0 - 12, py(-span)), f"-{span / 1000:.1f}k", font=font(15), fill=RED, anchor="rm")
+    dr.text((gx0 - 12, py(-span)), f"-{span / 1000:.1f}k", font=font(15), fill=ENEMY, anchor="rm")
 
     # 오브젝트 시점: 위쪽 띠에 아이콘, 그래프에 옅은 세로선
     slot = gx0 - 99.0
     for minute, url, ours in sorted(events):
         x = px(minute)
-        color = GREEN if ours else RED
-        dr.line((x, gy0 - 8, x, gy1), fill=shade(color, 0.3), width=1)
+        color = ALLY if ours else ENEMY
+        dr.line((x, gy0 - 8, x, gy1), fill=shade(color, 0.22), width=1)
         ix = max(x, slot + 30)  # 겹치면 오른쪽으로 민다
         slot = ix
-        dr.ellipse((ix - 15, 79, ix + 15, 109), fill=PANEL, outline=color, width=2)
-        ic = icon(url, 20, radius=10)
-        if ic:
-            img.paste(ic, (int(ix - 10), 84), ic)
+        medallion(img, ix, 94, 30, url, color)
 
     # 곡선과 면: 크게 그려 줄인다
     layer = Image.new("RGBA", (WIDTH * SS, height * SS), (0, 0, 0, 0))
@@ -221,14 +214,14 @@ def render_gold(diffs: list[int], events: list[tuple[float, str, bool]]) -> byte
     for y in range(layer.height):
         ramp.putpixel((0, y), int(40 + 125 * min(abs(y / SS - mid) / half, 1)))
     area = ImageChops.multiply(area, ramp.resize(layer.size))
-    for color, box in ((GREEN, (0, int(mid * SS), layer.width, layer.height)), (RED, (0, 0, layer.width, int(mid * SS)))):
+    for color, box in ((ALLY, (0, int(mid * SS), layer.width, layer.height)), (ENEMY, (0, 0, layer.width, int(mid * SS)))):
         alpha = area.copy()
         alpha.paste(0, box)
         fill = Image.new("RGBA", layer.size, color + (0,))
         fill.putalpha(alpha)
         layer = Image.alpha_composite(layer, fill)
     ld = ImageDraw.Draw(layer)
-    side = lambda d: GREEN if d >= 0 else RED
+    side = lambda d: ALLY if d >= 0 else ENEMY
     for i in range(len(diffs) - 1):
         (x1, y1), (x2, y2), d1, d2 = pts[i], pts[i + 1], diffs[i], diffs[i + 1]
         if d1 * d2 < 0:  # 0선을 지나는 구간은 색을 나눈다
