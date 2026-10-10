@@ -80,7 +80,7 @@ code{background:var(--neutral-bg);padding:1px 5px;border-radius:4px;font-size:.9
 <body>
 <main>
   <h1>범인찾기 동작 흐름</h1>
-  <p class="sum">launchd가 <code>serve</code> 하나를 상주시킵니다. 각 게임을 15분마다 수집해 게임별 Discord 스레드에 이미지 리포트를 올립니다. PUBG는 <code>/user</code> 전적 감정서도 제공합니다. (2026-10-10)</p>
+  <p class="sum">cron-job.org가 15분마다 GitHub Actions <code>find-imposter.yml</code>을 실행하고, <code>collect</code>가 배그·FC·롤을 한 번씩 수집해 게임별 Discord 스레드에 이미지 리포트를 올립니다. PUBG <code>/user</code> 전적 감정서는 맥 상주(<code>serve</code>)일 때만 동작하며 지금은 꺼 두었습니다. (2026-10-10)</p>
 
   <div class="legend">
     <span><i style="background:var(--neutral-bg);border-color:var(--neutral-bd)"></i>일반</span>
@@ -95,7 +95,7 @@ code{background:var(--neutral-bg);padding:1px 5px;border-radius:4px;font-size:.9
     <div class="cols">
     <section class="col">
       <h2>경기 리포트</h2>
-      <p class="sub">15분 수집 루프 · <code>collector.py</code></p>
+      <p class="sub">15분마다 · <code>collector.py</code></p>
       <div class="flow">
         <div class="node n-blue">친구마다 최근 30경기 조회<small>players.json의 PUBG 닉네임</small></div>
         <div class="arrow"></div>
@@ -112,7 +112,7 @@ code{background:var(--neutral-bg);padding:1px 5px;border-radius:4px;font-size:.9
             <div class="node n-ai">모드별 분석<small>배틀로얄 평점 / TDM 팀·라운드</small></div></div>
         </div>
         <div class="arrow"></div>
-        <div class="node">이미지 리포트 + Gemini 평가<small>배틀로얄: 결과·팀 기록·경로·교전·무기<br>TDM: 라운드 결과·양 팀 비교·무기, MVP·ACE·범인</small></div>
+        <div class="node">이미지 리포트 + Gemini 평가<small>배틀로얄: 결과·팀 기록·경로(GIF)·교전(GIF)·무기<br>TDM: 라운드 결과·양 팀 비교·무기, MVP·ACE·범인</small></div>
         <div class="arrow"></div>
         <div class="node n-ok">PUBG 스레드에 @silent 전송<small>prod=REAL · dev=BETA</small></div>
         <div class="arrow"></div>
@@ -122,7 +122,7 @@ code{background:var(--neutral-bg);padding:1px 5px;border-radius:4px;font-size:.9
 
     <section class="col">
       <h2>/user 전적 감정서</h2>
-      <p class="sub">슬래시 명령 · <code>bot.py</code></p>
+      <p class="sub">슬래시 명령 · <code>bot.py</code> · 맥 상주일 때만 (지금 꺼 둠)</p>
       <div class="flow">
         <div class="node">/user 이름 [판수]<small>이름 자동완성, 기본 30판</small></div>
         <div class="arrow"></div>
@@ -150,7 +150,7 @@ code{background:var(--neutral-bg);padding:1px 5px;border-radius:4px;font-size:.9
     <div class="game-head"><h2>⚽ FC Online</h2><p>친구 간 클래식 1on1</p></div>
     <section class="col">
       <h2>친구전 리포트</h2>
-      <p class="sub">15분 FC 루프 · <code>fc_collector.py</code></p>
+      <p class="sub">15분마다 · <code>fc_collector.py</code></p>
       <div class="flow">
         <div class="node n-blue">친구마다 클래식 1on1 최근 20경기<small>NEXON Open API, 하루 900회에서 멈춤</small></div>
         <div class="arrow"></div>
@@ -178,7 +178,7 @@ code{background:var(--neutral-bg);padding:1px 5px;border-radius:4px;font-size:.9
     <div class="game-head"><h2>⚔️ League of Legends</h2><p>사람 기준 친구 경기 · 여러 계정 지원</p></div>
     <section class="col">
       <h2>친구전 리포트</h2>
-      <p class="sub">15분 롤 루프 · <code>lol_collector.py</code></p>
+      <p class="sub">15분마다 · <code>lol_collector.py</code></p>
       <div class="flow">
         <div class="node n-blue">계정마다 최근 10경기 ID<small>Riot API, 한 사람 여러 계정</small></div>
         <div class="arrow"></div>
@@ -192,7 +192,7 @@ code{background:var(--neutral-bg);padding:1px 5px;border-radius:4px;font-size:.9
           <div class="br"><div class="lbl">협곡·칼바람 등</div>
             <div class="node n-ai">팀 안 항목별 순위 합산<small>승리 시 MVP · 패배 시 ACE</small></div>
             <div class="arrow"></div>
-            <div class="node">이미지 4장<small>결과·선수·오브젝트·골드 차이</small></div></div>
+            <div class="node">이미지 4장<small>결과·선수·오브젝트·골드 차이(GIF)</small></div></div>
         </div>
         <div class="arrow"></div>
         <div class="node n-ai">Gemini 총평·평가</div>
@@ -207,13 +207,14 @@ code{background:var(--neutral-bg);padding:1px 5px;border-radius:4px;font-size:.9
   <div class="tw">
     <table>
       <tbody>
-        <tr><th>실행</th><td>launchd <code>com.inticoy.imposter-finder</code> (KeepAlive), Python 3.14</td></tr>
+        <tr><th>실행</th><td>cron-job.org → GitHub Actions <code>find-imposter.yml</code> → <code>python -m imposter_finder collect</code> (15분마다, 한 번에 하나), Python 3.14. 맥 launchd <code>serve</code>는 예비로 꺼 둠</td></tr>
         <tr><th>게임 API</th><td>PUBG Developer API · NEXON Open API (FC, <code>test_</code> 키 하루 1,000회) · Riot API (개인 키 2분 100회) · FC 데이터센터·OP.GG 웹 (비공식)</td></tr>
         <tr><th>라우팅</th><td><code>BOT_ENV=prod</code> → 게임별 <code>DISCORD_THREAD_{PUBG,FC,LOL}_PROD</code>, dev → <code>_DEV</code>. PUBG 전용 스레드가 없으면 예전 글 리포트 경로 사용</td></tr>
-        <tr><th>저장</th><td><code>data/imposter_finder.db</code>(PUBG·FC·롤 경기, 자동 알림 기록, API 사용량), <code>players.json</code>(친구·계정), <code>data/assets/</code>(이미지 캐시) — 커밋 안 함</td></tr>
+        <tr><th>저장</th><td><code>data/imposter_finder.db</code>(PUBG·FC·롤 경기, 자동 알림 기록, API 사용량)·<code>data/fc_meta/</code>는 Actions 캐시에 매번, <code>data/assets/</code>(이미지 캐시)는 바뀔 때만. <code>players.json</code>·<code>.env</code>는 시크릿 — 모두 커밋 안 함</td></tr>
+        <tr><th>이미지</th><td>Pillow, 가로 1000px. 배그 경로·교전, 롤 골드 차이는 GIF(장면 0.42초, 마지막 1.8초). 글꼴은 레포의 Pretendard·Teko</td></tr>
         <tr><th>AI</th><td>Gemini <code>gemini-3.5-flash-lite</code> — PUBG·FC·롤 총평·평가</td></tr>
-        <tr><th>감시</th><td>수집 주기마다 Healthchecks 핑, 실패 시 <code>/fail</code></td></tr>
-        <tr><th>로그</th><td><code>logs/imposter-finder.log</code>, <code>logs/imposter-finder-error.log</code></td></tr>
+        <tr><th>감시</th><td>실행마다 Healthchecks 핑, 한 게임이라도 실패하면 <code>/fail</code></td></tr>
+        <tr><th>로그</th><td>Actions 실행 로그(공개) — 건수·에러만, 친구 이름·닉네임·ID는 <code>***</code></td></tr>
       </tbody>
     </table>
   </div>
@@ -223,8 +224,9 @@ code{background:var(--neutral-bg);padding:1px 5px;border-radius:4px;font-size:.9
     <table>
       <tbody>
         <tr><th>v1</th><td>GitHub Actions + cron-job.org, <code>seen_matches.json</code> 커밋 (2026-05 ~ 08)</td></tr>
-        <tr><th>v2</th><td>맥 상주 봇 + SQLite + <code>/user</code> (2026-08 ~, 10-09에 Python 3.14·로그 정리)</td></tr>
-        <tr><th>v3</th><td class="good">FC 친구전 리포트 (2026-10-09~) · 롤 친구전 및 PUBG 이미지 리포트 (10-10~) · 영입 알림·<code>@멘션</code> 자연어 (계획)</td></tr>
+        <tr><th>v2</th><td>맥 상주 봇 + SQLite + <code>/user</code> (2026-08 ~ 10-10)</td></tr>
+        <tr><th>v3</th><td class="good">FC 친구전 리포트 (2026-10-09~) · 롤 친구전 및 PUBG 이미지 리포트 (10-10~) · 경로·교전·골드 GIF (10-10~) · 영입 알림·<code>@멘션</code> 자연어 (계획)</td></tr>
+        <tr><th>v4</th><td class="good">GitHub Actions + cron-job.org 15분, 상태는 Actions 캐시 (2026-10-10~)</td></tr>
       </tbody>
     </table>
   </div>

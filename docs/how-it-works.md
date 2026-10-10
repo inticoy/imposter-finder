@@ -5,18 +5,21 @@
 ## 구조
 
 ```
-launchd (KeepAlive)
-  └─ python -m imposter_finder serve        상주 프로세스 1개
-       ├─ Discord 봇 (bot.py)               /user 슬래시 명령
-       ├─ 15분 PUBG 루프 (collector.py)       새 그룹 매치 → 배그 이미지 리포트
-       ├─ 15분 FC 루프 (fc_collector.py)      새 친구전 → FC 이미지 리포트
-       └─ 15분 롤 루프 (lol_collector.py)     새 친구전 → 롤 이미지 리포트
-            ├─ games/pubg.py · fconline.py · lol.py   게임 API·데이터센터·OP.GG
-            ├─ analysis/pubg.py · pubg_report.py  판정·이미지·Gemini 평가
-            ├─ analysis/fc_report.py · lol_report.py  리포트 이미지 + Gemini 평가
-            ├─ analysis/cards.py            공통 그리기·이미지 캐시
-            ├─ storage.py                   SQLite data/imposter_finder.db
-            └─ discord.py                   리포트 전송 (REST)
+cron-job.org (15분마다 workflow_dispatch)
+  └─ GitHub Actions find-imposter.yml       Actions 캐시에서 DB·이미지 캐시 복원
+       └─ python -m imposter_finder collect  한 번 돌고 끝 (once.py, 로그의 개인정보 가림)
+            ├─ PUBG (collector.py)          새 그룹 매치 → 배그 이미지 리포트
+            ├─ FC (fc_collector.py)         새 친구전 → FC 이미지 리포트
+            └─ 롤 (lol_collector.py)        새 친구전 → 롤 이미지 리포트
+                 ├─ games/pubg.py · fconline.py · lol.py   게임 API·데이터센터·OP.GG
+                 ├─ analysis/pubg.py · pubg_report.py  판정·이미지·GIF·Gemini 평가
+                 ├─ analysis/fc_report.py · lol_report.py  리포트 이미지 + Gemini 평가
+                 ├─ analysis/cards.py       공통 그리기·글꼴·GIF 인코더·이미지 캐시
+                 ├─ storage.py              SQLite data/imposter_finder.db
+                 └─ discord.py              리포트 전송 (REST)
+
+맥 상주 (예비, 지금 꺼 둠): launchd → python -m imposter_finder serve
+  = Discord 봇(/user) + 같은 세 수집을 15분 루프로
 ```
 
 ## PUBG: 15분 수집 → 경기 리포트
@@ -30,7 +33,7 @@ launchd (KeepAlive)
 
 | 모드 | 리포트 |
 |---|---|
-| 배틀로얄 스쿼드·듀오 | 결과·순위, 평점순 팀원 기록(MVP·범인), 이동 경로 지도, 교전 흐름, 쓴 무기. 텔레메트리가 없으면 해당 카드는 생략 |
+| 배틀로얄 스쿼드·듀오 | 결과·순위, 평점순 팀원 기록(MVP·범인), 이동 경로 지도(GIF), 교전 흐름(GIF), 쓴 무기. 텔레메트리가 없으면 해당 카드는 생략 |
 | 팀 데스매치 | 맵·라운드 결과, 양 팀 비교, 팀원별 무기. 승리 팀 최고 친구 MVP, 패배 팀 최고 친구 ACE, 별도로 범인 표시. 라운드별 승자는 텔레메트리와 최종 승자가 맞을 때만 추정 표시 |
 
 배틀로얄 평점 감점 예시(`analysis/pubg.py`): 0딜 −0.8, 킬·기절 없이 교전 기여 낮음 −0.4, 5분 이상 살았는데 교전 거의 없음 −0.4, 친구 중 첫 기절 −0.6, 친구 중 첫 사망 −0.8. TDM은 킬·딜량·헤드샷·어시스트·사망 순으로 비교하며 배틀로얄 평점을 쓰지 않습니다.
@@ -39,11 +42,17 @@ launchd (KeepAlive)
 
 DB에는 PUBG 경기 상세 JSON을 저장하지만 텔레메트리 본문은 저장하지 않습니다. 오래된 경기의 텔레메트리 URL이 만료되면 경로·교전·무기 카드를 다시 만들 수 없으므로, 맵별 과거 경기 재전송에는 이 제한이 있습니다.
 
-**첫 실행과 재시작:** DB가 비어 있으면 첫 수집은 리포트 없이 기록만 합니다(지난 매치가 한꺼번에 가지 않게). DB가 있으면 꺼져 있던 동안의 최근 매치도 정상적으로 리포트합니다.
+**첫 실행과 빈 실행:** DB가 비어 있으면(Actions 캐시가 없을 때 포함) 그 수집은 리포트 없이 기록만 합니다(지난 매치가 한꺼번에 가지 않게). DB가 있으면 실행이 멈춰 있던 동안의 최근 매치(12시간 이내)도 정상적으로 리포트합니다.
+
+**이동 경로·교전 흐름 GIF:** 우리 팀이 끝날 때까지를 고르게 32장면 + 착지·기절시킴·기절당함·처치·사망 순간(6초 안에 겹치면 합침)으로 나눠, 경로가 그려지고 처치·사망 표시가 그 순간 나타납니다. 지도에는 지금 위치 점과 경기 시각, 교전 흐름에는 노란 재생 막대와 경기 시각이 있습니다. 두 GIF는 장면 시각과 재생 시간표가 같아 함께 재생됩니다.
 
 ## 이미지 리포트 공통 (PUBG · FC · 롤)
 
-- 구역마다 PNG 한 장씩(Pillow, 가로 1000px, 한 장 높이 약 560px 이하)을 만들어 Components V2 미디어 갤러리로 보내고, 맨 아래에 **총평 / 평가** 글을 붙입니다.
+- 구역마다 이미지 한 장씩(Pillow, 가로 1000px, 한 장 높이 약 560px 이하)을 만들어 Components V2 미디어 갤러리로 보내고, 맨 아래에 **총평 / 평가** 글을 붙입니다.
+- 시간 흐름이 있는 카드는 GIF입니다: 배그 이동 경로·교전 흐름, 롤 골드 차이. 장면마다 0.42초, 마지막 장면은 1.8초 멈춥니다.
+  - 인코딩(`cards.gif`): 모든 장면을 마지막 장면 팔레트 하나로 맞춰 바뀐 곳만 저장합니다(배그 경로 10.2MB → 약 0.7MB). 지도는 FASTOCTREE, 흐린 원화 바탕(롤)은 MAXCOVERAGE + 바뀐 픽셀만 점 섞기(디더링)로 색 계단을 없앱니다.
+  - 디스코드 기본 업로드 한도가 10MB라, GIF가 8MB를 넘으면 예전 PNG로 보냅니다.
+- 글꼴은 레포의 `fonts/`: 한글 Pretendard(Medium·SemiBold), 배그 숫자·영문 Teko. 맥 시스템 글꼴을 쓰지 않아 GitHub Actions(리눅스)에서도 같은 이미지가 나옵니다.
 - 모든 리포트는 **@silent**, DM은 보내지 않습니다.
 - 디자인 원칙: 1px 선·테두리 없이 흐린 배경 그림 + 반투명 둥근 판 + 그늘로 구분, 도형은 4배로 그려 줄여 매끄럽게(`SS=4`). 아이콘은 Twemoji(디스코드와 같은 이모지 그림).
 - 자주 쓰는 이미지(지도·무기·챔피언·아이템·엠블럼·선수 얼굴·이모지)는 `data/assets/{pubg,lol,fc,common}/`에 저장해 재사용합니다.
@@ -83,7 +92,7 @@ DB에는 PUBG 경기 상세 JSON을 저장하지만 텔레메트리 본문은 �
 | 결과 배너 | 승리/패배, 모드, 시간, 양 팀 킬·골드·챔피언 아이콘(친구 표시), MVP 챔피언 원화 바탕 |
 | 선수 | 친구마다 같은 폭 열(로딩 원화), KDA, 딜량·받은 피해·KDA·킬 관여·분당 CS·시야 점수, MVP(금색)·범인(빨강) |
 | 오브젝트 | 오브젝트별 우리:상대 막대, 드래곤 처치 순서 |
-| 골드 차이 | 분별 골드 차이 곡선, 그 위에 에픽 몬스터 처치 시점 (타임라인이 있을 때) |
+| 골드 차이 (GIF) | 분별 골드 차이 곡선이 1분씩 그려지고, 에픽 몬스터 처치 시점에 아이콘·세로선이 나타남. 축은 경기 전체 기준으로 고정 (타임라인이 있을 때) |
 
 - **MVP·ACE·범인:** 우리 팀 5명 안에서 항목별 순위를 매겨 합산(딜 25, KDA 20, 킬 관여 15, 받은 피해·CS·시야·데스 각 10). 친구 중 최고가 승리 시 MVP, 패배 시 ACE, 최저가 범인(친구가 1명이면 범인 없음).
 - **아레나**는 순위전이라 오브젝트·골드 없이 순위(같으면 딜량)로 MVP·범인을 고르고 순위·딜·받은 피해·킬을 보여줍니다.
@@ -91,7 +100,9 @@ DB에는 PUBG 경기 상세 JSON을 저장하지만 텔레메트리 본문은 �
 - 카드 왼쪽 색은 승리 파랑 / 패배 빨강입니다.
 - **API 한도:** 개인 키는 2분에 100회라 요청 사이를 1.3초 띄웁니다. 첫 실행은 최근 30경기를 리포트 없이 저장만 합니다.
 
-## `/user` 전적 감정서
+## `/user` 전적 감정서 (맥 상주일 때만)
+
+Discord 봇이 계속 켜져 있어야 해서 Actions 운영 중에는 쓸 수 없습니다. 코드는 남겨 두었습니다.
 
 `/user 이름 [판수]` (기본 30판, 5~100) — 이름은 자동완성됩니다.
 
@@ -104,12 +115,16 @@ DB에는 PUBG 경기 상세 JSON을 저장하지만 텔레메트리 본문은 �
 
 | 항목 | 내용 |
 |---|---|
-| 실행 | launchd `com.inticoy.imposter-finder`, Python 3.14 (`.venv`) |
-| 로그 | `logs/imposter-finder.log` (수집 결과), `logs/imposter-finder-error.log` (봇) |
-| 감시 | 수집 주기마다 `HEALTHCHECK_IMPOSTER_FINDER_URL` 핑, 실패 시 `/fail` (period 15분, grace 10분) |
-| 라우팅 | `.env`의 `BOT_ENV=prod`면 게임별 `_PROD` 스레드, `dev`면 `_DEV` 스레드. PUBG 전용 스레드가 없으면 예전 글 리포트 스레드로 전송 |
-| 데이터 | `data/imposter_finder.db` (PUBG·FC·롤 경기 및 자동 알림 기록, 커밋 안 함), `players.json` (커밋 안 함), `data/fc_meta/`, `data/assets/` (이미지 캐시, 커밋 안 함) |
+| 실행 | GitHub Actions `find-imposter.yml` (ubuntu, Python 3.14), cron-job.org가 15분마다 `workflow_dispatch` |
+| 설정 | 시크릿 `ENV_FILE`(.env), `PLAYERS_JSON`(한 줄 JSON). `BOT_ENV`는 workflow에서 `prod` |
+| 상태 | Actions 캐시: `state-<run id>`(DB·`fc_meta`, 매번), `assets-<hash>`(이미지 캐시, 바뀔 때만). 최근 2개만 남김 |
+| 로그 | Actions 실행 로그 (공개). 게임별 건수·에러만, `players.json`의 이름·닉네임·ID는 `***` |
+| 감시 | 실행마다 `HEALTHCHECK_IMPOSTER_FINDER_URL` 핑, 한 게임이라도 실패하면 `/fail` (period 15분, grace 10분) |
+| 라우팅 | `BOT_ENV=prod`면 게임별 `_PROD` 스레드, `dev`면 `_DEV` 스레드. PUBG 전용 스레드가 없으면 예전 글 리포트 스레드로 전송 |
+| 데이터 | `data/imposter_finder.db` (PUBG·FC·롤 경기 및 자동 알림 기록), `players.json`, `data/fc_meta/`, `data/assets/` (이미지 캐시) — 모두 커밋 안 함 |
 
-- 인터넷이 끊긴 채로 시작하면 Discord 로그인에 실패해 종료되고, launchd가 10초 뒤 다시 띄웁니다.
-- 설정이나 코드를 운영 프로세스에 반영하려면 `launchctl kickstart -k gui/$(id -u)/com.inticoy.imposter-finder`로 재시작합니다.
+- 실행이 겹치지 않게 `concurrency`로 하나씩. 10분 넘게 걸리면 멈춥니다(평소 1~3분).
+- 캐시가 사라지면 다음 실행은 기록만 하고 올리지 않습니다. 그 사이 끝난 경기는 리포트되지 않습니다.
+- FC 넥슨 API 사용량(`api_usage`)도 DB에 있어 캐시와 함께 이어집니다.
+- 맥 상주(`serve`)는 예비입니다. 켤 때는 Actions(cron-job.org)를 먼저 끕니다. 둘의 DB는 따로라 같이 켜면 중복 전송됩니다.
 - `pubg` 명령(`--list-matches` 등)은 디버깅용입니다. 이 경로는 예전 GitHub Actions용 `data/seen_matches.json`을 상태로 씁니다.
