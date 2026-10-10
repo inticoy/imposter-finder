@@ -7,25 +7,27 @@
 - 맨 아래 **총평 · 평가**는 Gemini가 기록을 근거로 해설자 말투로 씁니다.
 - GitHub Actions에서 돌며 서버가 필요 없습니다 ([cron-job.org](https://cron-job.org)가 15분마다 실행).
 
-> 아래는 디스코드에 실제로 올라오는 모습입니다. 실제 경기로 만들었고 이름과 닉네임만 가명으로 바꿨습니다 ([tools/readme_samples.py](tools/readme_samples.py)).
+## 리포트 예시
 
-## 🪂 배틀그라운드
+> 디스코드에 실제로 올라오는 모습입니다 (누르면 크게). 실제 경기로 만들었고 이름과 닉네임만 가명으로 바꿨습니다 ([tools/readme_samples.py](tools/readme_samples.py)).
 
-결과·순위 → 스쿼드 기록(MVP·범인) → 이동 경로 → 교전 흐름 → 쓴 무기. 이동 경로와 교전 흐름은 같은 시간표로 함께 재생되며, 처치·기절·사망이 일어난 순간이 장면으로 잡힙니다. 팀 데스매치는 라운드 결과·양 팀 비교·무기로 바뀝니다.
-
-<img src="docs/images/pubg.gif" width="600" alt="배그 리포트: 결과·스쿼드 기록·이동 경로·교전 흐름·쓴 무기·총평/평가">
-
-## ⚔️ 리그 오브 레전드
-
-결과 → 친구별 선수 비교(MVP·ACE·범인) → 오브젝트 → 골드 차이. 골드 차이 곡선은 분 단위로 그려지고, 드래곤·바론 같은 에픽 몬스터는 처치한 시점에 나타납니다. 한 사람이 여러 계정을 써도 사람 기준으로 친구전을 찾습니다.
-
-<img src="docs/images/lol.gif" width="600" alt="롤 리포트: 결과·선수 비교·오브젝트·골드 차이·총평/평가">
-
-## ⚽ FC 온라인
-
-친구끼리 한 클래식 1on1을 축구 중계 화면처럼: 스코어보드(팀컬러 엠블럼·구단 가치·맞대결 10경기) → 경기 MVP·범인 → 경기 기록 → 슈팅맵 → 라인업.
-
-<img src="docs/images/fc.png" width="600" alt="FC 리포트: 스코어보드·MVP/범인·경기 기록·슈팅맵·라인업·총평/평가">
+<table>
+  <tr>
+    <th width="33%">🪂 배틀그라운드</th>
+    <th width="33%">⚔️ 리그 오브 레전드</th>
+    <th width="33%">⚽ FC 온라인</th>
+  </tr>
+  <tr>
+    <td valign="top"><a href="docs/images/pubg.gif"><img src="docs/images/pubg.gif" width="300" alt="배그 리포트"></a></td>
+    <td valign="top"><a href="docs/images/lol.gif"><img src="docs/images/lol.gif" width="300" alt="롤 리포트"></a></td>
+    <td valign="top"><a href="docs/images/fc.png"><img src="docs/images/fc.png" width="300" alt="FC 리포트"></a></td>
+  </tr>
+  <tr>
+    <td valign="top">결과·순위 → 스쿼드 기록(MVP·범인) → 이동 경로 → 교전 흐름 → 쓴 무기. 이동 경로와 교전 흐름은 같은 시간표로 함께 재생되고, 처치·기절·사망 순간이 장면으로 잡힙니다. 팀 데스매치는 라운드 결과·양 팀 비교·무기.</td>
+    <td valign="top">결과 → 선수 비교(MVP·ACE·범인) → 오브젝트 → 골드 차이. 골드 곡선은 분 단위로 그려지고 드래곤·바론은 처치한 시점에 나타납니다. 한 사람이 여러 계정을 써도 사람 기준으로 친구전을 찾습니다.</td>
+    <td valign="top">클래식 1on1을 축구 중계 화면처럼: 스코어보드(팀컬러 엠블럼·구단 가치·맞대결 10경기) → MVP·범인 → 경기 기록 → 슈팅맵 → 라인업.</td>
+  </tr>
+</table>
 
 ## 문서
 
