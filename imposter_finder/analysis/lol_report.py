@@ -52,6 +52,8 @@ def _team_scores(team: list[dict], minutes: float) -> dict[str, dict]:
     for key, weight in weights.items():
         for rank, pid in enumerate(sorted(stats, key=lambda pid: stats[pid][key])):
             stats[pid]["score"] += weight * rank / max(len(stats) - 1, 1)
+    for rank, pid in enumerate(sorted(stats, key=lambda pid: -stats[pid]["score"]), 1):
+        stats[pid]["rank"] = f"{rank}/{len(stats)}"
     return stats
 
 
@@ -339,10 +341,17 @@ def build_report(match: dict[str, Any], timeline: dict[str, Any] | None, friends
     return _payload(mine, friends, won, files, ai), files
 
 
+POSITIONS = {"TOP": "탑", "JUNGLE": "정글", "MIDDLE": "미드", "BOTTOM": "원딜", "UTILITY": "서포터"}
+
+
 def _player_fact(p: dict, name: str, role: str, stats: dict, ddragon: DDragon) -> dict:
+    st = stats[p["puuid"]]
     return {"이름": name, "역할": role, "챔피언": ddragon.champion_name(p["championName"]),
+            "포지션": POSITIONS.get(p.get("teamPosition", ""), "알 수 없음"),
             "KDA": f"{p['kills']}/{p['deaths']}/{p['assists']}", "딜량": p["totalDamageDealtToChampions"],
-            "킬 관여": f"{stats[p['puuid']]['kp'] * 100:.0f}%", "시야 점수": p["visionScore"]}
+            "받은 피해": p["totalDamageTaken"], "킬 관여": f"{st['kp'] * 100:.0f}%", "분당 CS": round(st["cs"], 1),
+            "시야 점수": p["visionScore"], "제어 와드": p.get("visionWardsBoughtInGame", 0),
+            "포탑 피해": p.get("damageDealtToBuildings", 0), "팀 안 종합 순위": st.get("rank")}
 
 
 def _build_arena(match: dict, friends: dict[str, Friend], ddragon: DDragon, key: str | None, model: str):
@@ -399,10 +408,20 @@ def _evaluate(facts: dict, names: list[str], api_key: str | None, model: str) ->
     if not api_key:
         return {}
     keys = ["summary"] + names
-    prompt = ("리그 오브 레전드 경기 기록이야. 친구끼리 보는 디스코드 리포트에 넣을 평가를 써줘.\n"
-              "summary: 경기 흐름 한 문장, 50자 이내. 골드 흐름 문장과 오브젝트를 그대로 근거로, 기록에 없는 흐름을 지어내지 마.\n"
-              "각 선수 이름: '{이름}은/는 ...했습니다.' 45자 이내 한 문장, 결정적인 수치 하나와 그 의미.\n"
-              "수치는 기록 값 그대로, 조언·이모지·줄표 금지, 조사 은/는을 이름 받침에 맞게.\n\n"
+    prompt = ("리그 오브 레전드 경기 기록이야. 친구끼리 보는 디스코드 리포트에 넣을 한마디를 써줘. "
+              "스탯은 이미 이미지로 보여주니까 숫자를 읊지 말고, 해설자나 코치처럼 느낌과 조언을 말해줘.\n"
+              "summary: 이 판을 한 문장으로 (60자 이내). 무엇이 승부를 갈랐는지, 아쉬운 점이나 다음 판에 해볼 것. "
+              "골드 흐름과 오브젝트 기록이 근거지만 숫자는 쓰지 마. 기록에 없는 장면(한타, 갱킹 등)을 지어내지 마.\n"
+              "각 선수 이름: 그 친구에게 하는 한마디 (60자 이내, 1~2문장, 이름으로 시작, 은/는 받침에 맞게). "
+              "MVP는 무엇이 좋았는지 칭찬 (예: 기가 막히네요, 오늘 캐리했습니다), "
+              "범인은 무엇이 아쉬웠는지와 다음에 해볼 것 (예: 다음 판엔 ~해보세요, ~에 신경 써보세요). "
+              "판단은 기록(포지션, 데스, 시야, 딜량, 킬 관여 등)에 근거하고, 숫자는 꼭 필요할 때 하나만.\n"
+              "좋은 예: '현빈은 오공으로 앞라인과 딜을 다 챙겼네요. 오늘 판은 현빈이 끌고 갔습니다.'\n"
+              "좋은 예: '종서는 쉔으로 너무 자주 끊겼어요. 다음 판엔 합류 전에 시야부터 잡아보세요.'\n"
+              "나쁜 예: '현빈은 딜량 44,621과 킬 관여 75%를 기록했습니다.' (숫자 나열)\n"
+              "진 판의 MVP에게 '캐리했다'처럼 이긴 듯한 말은 쓰지 말고 '졌지만 ~는 빛났어요'처럼. "
+              "한타·갱킹·라인전 같은 장면 묘사는 기록에 없으니 쓰지 마.\n"
+              "이모지·줄표 금지, 존댓말(~요, ~습니다)로 친근하게.\n\n"
               + json.dumps(facts, ensure_ascii=False))
     try:
         from google import genai
