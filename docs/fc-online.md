@@ -25,7 +25,7 @@ FC 기능을 만들 때 쓰는 데이터 출처와 규칙입니다. 동작 방�
 
 ## 친구 · thread
 
-- 친구 FC 닉네임: `players.json`의 `accounts.fconline.nickname` (5명, 정인은 기록 없음)
+- 친구 FC 닉네임: `players.json`의 `accounts.fconline.nickname`
 - 친구전 판별: 친구들의 **클래식 1on1(40)** 목록에 같은 경기 ID가 두 명 이상 있으면 친구전. 리그 친선(30)·공식 친선(60)은 친구전이 없었음. 2026-10-09 기준 6쌍 124경기
 - 보관: 넥슨은 약 30일치만 보여줍니다 (2026-10-09 기준 가장 오래된 경기 9/10, 다음 페이지 없음)
 - thread: 말말말-beta "⚽ FC Online BETA" (`DISCORD_THREAD_FC_DEV`), 말말말 "⚽ FC Online" (`DISCORD_THREAD_FC_PROD`). 봇이 만든 thread라 첫 글을 봇이 수정할 수 있음

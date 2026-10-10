@@ -1,115 +1,72 @@
 # 범인찾기 (imposter-finder)
 
-친구들끼리 한 PUBG·FC 온라인·롤 경기를 찾아 Discord의 게임별 스레드에 이미지 리포트를 올리는 봇입니다. GitHub Actions에서 15분마다 돕니다 (cron-job.org가 실행). PUBG `/user` 전적 감정서는 맥 상주(`serve`)일 때만 쓸 수 있고, 지금은 꺼 두었습니다.
+친구들끼리 한 **배틀그라운드 · 리그 오브 레전드 · FC 온라인** 경기를 찾아, 끝나면 Discord에 경기 분석 이미지와 한 줄 판독을 올려 주는 봇입니다. 누가 캐리했고(MVP) 누가 발목을 잡았는지(범인) 기록으로 가려 줍니다.
 
-동작 방식은 [docs/how-it-works.md](docs/how-it-works.md), 버전과 계획은 [docs/versions.md](docs/versions.md), FC 데이터는 [docs/fc-online.md](docs/fc-online.md), 흐름도는 [docs/flow.html](docs/flow.html)에 있습니다.
+- 15분마다 친구들의 최근 경기를 게임 API에서 가져와, 등록된 친구가 두 명 이상 함께한 경기만 골라냅니다.
+- 게임마다 분석 화면처럼 이미지 4~5장을 만들고, 시간 흐름이 있는 카드(이동 경로·교전 흐름·골드 차이)는 GIF로 보여 줍니다.
+- 맨 아래 **총평 · 평가**는 Gemini가 기록을 근거로 해설자 말투로 씁니다.
+- GitHub Actions에서 돌며 서버가 필요 없습니다 ([cron-job.org](https://cron-job.org)가 15분마다 실행).
 
-## 설정
+> 아래 예시는 실제 경기로 만들었고, 이름과 닉네임만 가명으로 바꿨습니다 ([tools/readme_samples.py](tools/readme_samples.py)).
 
-```bash
-/opt/homebrew/bin/python3.14 -m venv .venv
-.venv/bin/pip install -r requirements.txt
-cp .env.example .env              # 토큰·채널 ID·API 키 채우기
-cp players.example.json players.json   # 친구 목록 (커밋 안 함)
-```
+## 🪂 배틀그라운드
 
-| 변수 | 설명 |
+결과·순위 → 스쿼드 기록(MVP·범인) → 이동 경로 → 교전 흐름 → 쓴 무기. 이동 경로와 교전 흐름은 같은 시간표로 함께 재생되며, 처치·기절·사망이 일어난 순간이 장면으로 잡힙니다. 팀 데스매치는 라운드 결과·양 팀 비교·무기로 바뀝니다.
+
+![배그 결과](docs/images/pubg/result.png)
+![배그 스쿼드 기록](docs/images/pubg/squad.png)
+![배그 이동 경로](docs/images/pubg/route.gif)
+![배그 교전 흐름](docs/images/pubg/timeline.gif)
+![배그 쓴 무기](docs/images/pubg/weapons.png)
+
+> **총평**
+> 사녹에서 3등을 기록했네요. 영희의 매서운 샷이 빛났지만 길동의 이른 탈락이 뼈아팠습니다.
+>
+> **평가**
+> 영희는 킬을 쓸어담으며 팀을 든든하게 이끌어줬네요. 과감한 교전 감각이 아주 빛났습니다.
+> 길동은 너무 일찍 끊겨서 아쉬웠어요. 다음 판엔 교전할 때 조금 더 신중하게 자리 잡아보세요.
+
+## ⚔️ 리그 오브 레전드
+
+결과 → 친구별 선수 비교(MVP·ACE·범인) → 오브젝트 → 골드 차이. 골드 차이 곡선은 분 단위로 그려지고, 드래곤·바론 같은 에픽 몬스터는 처치한 시점에 나타납니다. 한 사람이 여러 계정을 써도 사람 기준으로 친구전을 찾습니다.
+
+![롤 결과](docs/images/lol/result.png)
+![롤 선수 비교](docs/images/lol/players.png)
+![롤 오브젝트](docs/images/lol/objectives.png)
+![롤 골드 차이](docs/images/lol/gold.gif)
+
+> **총평**
+> 초반부터 주도권을 잡고 오브젝트를 독점하며 압도적인 포탑 철거로 승리한 경기입니다.
+>
+> **평가**
+> 미애는 딜과 포탑 철거를 모두 해내며 팀의 승리를 완벽하게 이끌었습니다.
+> 수진은 데스가 너무 많아 아쉬웠어요. 다음 판엔 진입 타이밍을 조금 더 조심해 보세요.
+
+## ⚽ FC 온라인
+
+친구끼리 한 클래식 1on1을 축구 중계 화면처럼: 스코어보드(팀컬러 엠블럼·구단 가치·맞대결 10경기) → 경기 MVP·범인 → 경기 기록 → 슈팅맵 → 라인업.
+
+![FC 스코어보드](docs/images/fc/score.png)
+![FC MVP·범인](docs/images/fc/potm.png)
+![FC 경기 기록](docs/images/fc/stats.png)
+![FC 슈팅맵](docs/images/fc/shots.png)
+![FC 라인업](docs/images/fc/lineup.png)
+
+> **총평**
+> 반페르시의 날카로운 결정력이 승부를 갈랐습니다.
+>
+> **평가**
+> 길동님은 완벽한 결정력으로 골문을 폭격했어요. 오늘 경기의 확실한 주인공입니다.
+> 지영님은 슈팅을 전부 유효로 연결했지만 빈도가 적어 아쉬웠어요. 다음 경기엔 점유율을 더 높여보세요.
+
+## 문서
+
+| 문서 | 내용 |
 |---|---|
-| `BOT_ENV` | `dev` / `prod` — 보낼 채널 선택 |
-| `DISCORD_BOT_TOKEN` | Discord 봇 토큰 |
-| `DISCORD_GUILD_ID` | 선택: 슬래시 명령을 이 서버에 바로 반영 |
-| `DISCORD_CHANNEL_*` / `DISCORD_THREAD_*` | 보낼 포럼 채널 / 고정 thread |
-| `PUBG_API_KEY`, `PUBG_PLATFORM` | [PUBG Developer](https://developer.pubg.com)에서 발급 |
-| `PUBG_MAX_MATCH_AGE_HOURS` | 이보다 오래된 매치는 알리지 않음 (기본 12) |
-| `NEXON_API_KEY` | FC 온라인, [NEXON Open API](https://openapi.nexon.com)에서 발급 (`test_` 키 하루 1,000회, 900회에서 멈춤) |
-| `DISCORD_THREAD_FC_DEV` / `_PROD` | FC 리포트를 보낼 thread (`BOT_ENV`에 맞는 쪽) |
-| `RIOT_API_KEY` | 롤, [Riot Developer](https://developer.riotgames.com) 개인 키 (2분 100회) |
-| `DISCORD_THREAD_LOL_DEV` / `_PROD` | 롤 리포트를 보낼 thread |
-| `DISCORD_THREAD_PUBG_DEV` / `_PROD` | 배그 이미지 리포트를 보낼 전용 thread. 미설정 시 기존 글 리포트 경로 사용 |
-| `GEMINI_API_KEY` | 배그·FC·롤 총평/평가 (없으면 평가 없이 보냄) |
-| `HEALTHCHECK_IMPOSTER_FINDER_URL` | 선택: 수집 주기마다 Healthchecks.io 핑 (한 게임이라도 실패하면 `/fail`) |
-| `*_POLL_INTERVAL_MINUTES` | 맥 `serve`의 수집 주기. Actions는 cron-job.org 주기를 따름 |
+| [docs/setup.md](docs/setup.md) | 설치, `.env`·`players.json`, GitHub Actions + cron-job.org 설정 |
+| [docs/how-it-works.md](docs/how-it-works.md) | 게임별 수집·판정·리포트 동작 |
+| [docs/flow.html](docs/flow.html) | 흐름도 |
+| [docs/versions.md](docs/versions.md) | 버전별 변화 |
+| [docs/fc-online.md](docs/fc-online.md) | FC 온라인 데이터 출처와 제약 |
 
-**`players.json`** — 사람마다 Discord ID와 게임 계정을 적습니다. PUBG 분석은 여기 등록된 친구가 2명 이상 함께 한 매치만 대상으로 합니다.
-
-```json
-{"players": [{"name": "준호", "discord_user_id": "123456789012345678",
-  "accounts": {"pubg": {"platform": "steam", "nickname": "PubgNickA"},
-               "fconline": {"nickname": "FcNickA"},
-               "lol": {"riot_ids": ["GameNameA#KR1", "SubAccount#KR1"]}}}]}
-```
-
-## 실행
-
-```bash
-.venv/bin/python -m imposter_finder collect # PUBG·FC·롤을 한 번 수집·리포트하고 끝 (GitHub Actions 운영)
-.venv/bin/python -m imposter_finder serve   # 슬래시 명령 봇 + 15분 PUBG·FC·롤 수집 (맥 상주, 지금 꺼 둠)
-.venv/bin/python -m imposter_finder pubg --list-matches   # 지금 분석할 매치 후보만 보기
-BOT_ENV=dev .venv/bin/python -m imposter_finder pubg --include-seen --ignore-age-limit \
-  --max-matches 1 --send-discord --no-save-state         # 예전 CLI 글 리포트 확인용; 운영 이미지 경로와 별개
-```
-
-## 자동 실행 (GitHub Actions + cron-job.org) — 운영 중
-
-`.github/workflows/find-imposter.yml`: cron-job.org가 15분마다 `workflow_dispatch`로 부르면 `collect`가 배그 → FC → 롤을 한 번씩 수집·리포트하고 끝납니다. 2026-10-10부터 운영합니다.
-
-**cron-job.org 작업**
-
-| 항목 | 값 |
-|---|---|
-| URL | `https://api.github.com/repos/inticoy/imposter-finder/actions/workflows/find-imposter.yml/dispatches` |
-| 방식 | `POST`, 본문 `{"ref":"main"}` |
-| 헤더 | `Authorization: Bearer <GitHub 토큰>`, `Accept: application/vnd.github+json` |
-| 주기 | `*/15 * * * *` (Asia/Seoul) |
-
-토큰은 이 레포의 Actions 쓰기 권한(fine-grained: Actions Read and write)이 필요합니다. 만료되면 401로 실패하고, 실패가 이어지면 cron-job.org가 작업을 끕니다. 응답 `204`가 정상입니다.
-
-**시크릿** (Settings → Secrets → Actions)
-
-```bash
-gh secret set ENV_FILE < .env      # .env 그대로. BOT_ENV는 workflow에서 prod로 고정
-.venv/bin/python -c "import json,sys; sys.stdout.write(json.dumps(json.load(open('players.json')), ensure_ascii=False, separators=(',',':')))" \
-  | gh secret set PLAYERS_JSON      # players.json을 한 줄로
-```
-
-`PLAYERS_JSON`은 한 줄로 넣습니다. 여러 줄이면 GitHub이 `{`·`]`만 있는 줄까지 가려 로그가 `***`투성이가 됩니다. 친구나 키가 바뀌면 같은 명령으로 다시 올립니다.
-
-**상태와 중복 방지**
-
-- `data/imposter_finder.db`·`data/fc_meta/`는 매 실행 Actions 캐시(`state-<run id>`)에 저장하고 다음 실행이 가장 최근 것을 복원합니다. 이미지 캐시 `data/assets/`는 내용이 바뀔 때만 저장합니다(`assets-<hash>`). 오래된 캐시는 최근 2개만 남기고 지웁니다.
-- 캐시가 없으면(첫 실행·캐시 삭제) 그때 보이는 경기는 기록만 하고 올리지 않습니다. 지난 경기가 한꺼번에 가거나 중복으로 가지 않습니다.
-- `concurrency`로 한 번에 하나만 실행합니다. 실행 시간은 10분까지(평소 1~3분, 첫 실행 약 4분).
-- 맥 `serve`와 동시에 켜면 같은 경기가 두 번 올라갑니다. 하나만 켭니다.
-
-**로그** — 공개 레포라 Actions 로그도 공개입니다. `players.json`의 이름·닉네임·Riot ID·디스코드 ID는 `***`로 가리고, 게임별 건수와 에러만 남깁니다.
-
-```
-[pubg] matches=43 published=1 bootstrap=False
-[fc] friend_matches=129 published=0 bootstrap=False
-[lol] group_matches=66 published=0 bootstrap=False
-```
-
-```bash
-gh run list --workflow find-imposter.yml --limit 5   # 최근 실행
-gh run view <run id> --log                          # 로그
-gh workflow run find-imposter.yml                   # 지금 한 번 실행
-gh cache list                                        # 상태·이미지 캐시
-```
-
-**글꼴** — 레포의 `fonts/`(Pretendard·Teko, OFL)를 써서 맥과 리눅스 러너의 이미지가 같습니다.
-
-## 맥 상주 (launchd) — 꺼 둠
-
-`/user` 슬래시 명령이 필요할 때만 씁니다. Actions와 동시에 켜지 않습니다.
-
-```bash
-cp ops/launchd/com.inticoy.imposter-finder.plist ~/Library/LaunchAgents/
-launchctl enable gui/$(id -u)/com.inticoy.imposter-finder      # 지금은 disable 상태
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.inticoy.imposter-finder.plist
-launchctl print gui/$(id -u)/com.inticoy.imposter-finder        # 상태
-tail -f logs/imposter-finder.log logs/imposter-finder-error.log
-```
-
-로그인하면 시작하고, 죽으면 10초 뒤 다시 띄웁니다(`KeepAlive`). `.env` 변경은 `launchctl kickstart -k gui/$(id -u)/com.inticoy.imposter-finder`로 재시작해 반영합니다. 끌 때는 `launchctl bootout` 후 `launchctl disable`(재부팅·로그인 때 다시 켜지지 않게).
-
-맥 DB(`data/imposter_finder.db`)와 Actions 캐시의 DB는 서로 따로입니다. 경기 원본과 전송 상태는 Git에 올리지 않습니다.
+Python 3.14 · Pillow · PUBG Developer API · Riot API · NEXON Open API · Gemini · Discord REST. 글꼴은 [Pretendard](https://github.com/orioncactus/pretendard)와 [Teko](https://github.com/googlefonts/teko) (OFL).

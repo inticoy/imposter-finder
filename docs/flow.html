@@ -80,7 +80,7 @@ code{background:var(--neutral-bg);padding:1px 5px;border-radius:4px;font-size:.9
 <body>
 <main>
   <h1>범인찾기 동작 흐름</h1>
-  <p class="sum">cron-job.org가 15분마다 GitHub Actions <code>find-imposter.yml</code>을 실행하고, <code>collect</code>가 배그·FC·롤을 한 번씩 수집해 게임별 Discord 스레드에 이미지 리포트를 올립니다. PUBG <code>/user</code> 전적 감정서는 맥 상주(<code>serve</code>)일 때만 동작하며 지금은 꺼 두었습니다. (2026-10-10)</p>
+  <p class="sum">cron-job.org가 15분마다 GitHub Actions <code>find-imposter.yml</code>을 실행하고, <code>collect</code>가 배그·FC·롤을 한 번씩 수집해 게임별 Discord 스레드에 이미지 리포트를 올립니다. PUBG <code>/user</code> 전적 감정서는 상주 실행(<code>serve</code>)일 때만 동작합니다. (2026-10-10)</p>
 
   <div class="legend">
     <span><i style="background:var(--neutral-bg);border-color:var(--neutral-bd)"></i>일반</span>
@@ -122,7 +122,7 @@ code{background:var(--neutral-bg);padding:1px 5px;border-radius:4px;font-size:.9
 
     <section class="col">
       <h2>/user 전적 감정서</h2>
-      <p class="sub">슬래시 명령 · <code>bot.py</code> · 맥 상주일 때만 (지금 꺼 둠)</p>
+      <p class="sub">슬래시 명령 · <code>bot.py</code> · 상주 실행일 때만</p>
       <div class="flow">
         <div class="node">/user 이름 [판수]<small>이름 자동완성, 기본 30판</small></div>
         <div class="arrow"></div>
@@ -207,9 +207,9 @@ code{background:var(--neutral-bg);padding:1px 5px;border-radius:4px;font-size:.9
   <div class="tw">
     <table>
       <tbody>
-        <tr><th>실행</th><td>cron-job.org → GitHub Actions <code>find-imposter.yml</code> → <code>python -m imposter_finder collect</code> (15분마다, 한 번에 하나), Python 3.14. 맥 launchd <code>serve</code>는 예비로 꺼 둠</td></tr>
+        <tr><th>실행</th><td>cron-job.org → GitHub Actions <code>find-imposter.yml</code> → <code>python -m imposter_finder collect</code> (15분마다, 한 번에 하나), Python 3.14. <code>/user</code>가 필요하면 <code>serve</code>로 상주 실행</td></tr>
         <tr><th>게임 API</th><td>PUBG Developer API · NEXON Open API (FC, <code>test_</code> 키 하루 1,000회) · Riot API (개인 키 2분 100회) · FC 데이터센터·OP.GG 웹 (비공식)</td></tr>
-        <tr><th>라우팅</th><td><code>BOT_ENV=prod</code> → 게임별 <code>DISCORD_THREAD_{PUBG,FC,LOL}_PROD</code>, dev → <code>_DEV</code>. PUBG 전용 스레드가 없으면 예전 글 리포트 경로 사용</td></tr>
+        <tr><th>라우팅</th><td><code>BOT_ENV=prod</code> → 게임별 <code>DISCORD_THREAD_{PUBG,FC,LOL}_PROD</code>, dev → <code>_DEV</code>. thread가 비어 있는 게임은 수집하지 않음</td></tr>
         <tr><th>저장</th><td><code>data/imposter_finder.db</code>(PUBG·FC·롤 경기, 자동 알림 기록, API 사용량)·<code>data/fc_meta/</code>는 Actions 캐시에 매번, <code>data/assets/</code>(이미지 캐시)는 바뀔 때만. <code>players.json</code>·<code>.env</code>는 시크릿 — 모두 커밋 안 함</td></tr>
         <tr><th>이미지</th><td>Pillow, 가로 1000px. 배그 경로·교전, 롤 골드 차이는 GIF(장면 0.42초, 마지막 1.8초). 글꼴은 레포의 Pretendard·Teko</td></tr>
         <tr><th>AI</th><td>Gemini <code>gemini-3.5-flash-lite</code> — PUBG·FC·롤 총평·평가</td></tr>

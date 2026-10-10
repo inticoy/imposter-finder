@@ -18,7 +18,7 @@ cron-job.org (15분마다 workflow_dispatch)
                  ├─ storage.py              SQLite data/imposter_finder.db
                  └─ discord.py              리포트 전송 (REST)
 
-맥 상주 (예비, 지금 꺼 둠): launchd → python -m imposter_finder serve
+상주 실행 (선택): python -m imposter_finder serve
   = Discord 봇(/user) + 같은 세 수집을 15분 루프로
 ```
 
@@ -52,7 +52,7 @@ DB에는 PUBG 경기 상세 JSON을 저장하지만 텔레메트리 본문은 �
 - 시간 흐름이 있는 카드는 GIF입니다: 배그 이동 경로·교전 흐름, 롤 골드 차이. 장면마다 0.42초, 마지막 장면은 1.8초 멈춥니다.
   - 인코딩(`cards.gif`): 모든 장면을 마지막 장면 팔레트 하나로 맞춰 바뀐 곳만 저장합니다(배그 경로 10.2MB → 약 0.7MB). 지도는 FASTOCTREE, 흐린 원화 바탕(롤)은 MAXCOVERAGE + 바뀐 픽셀만 점 섞기(디더링)로 색 계단을 없앱니다.
   - 디스코드 기본 업로드 한도가 10MB라, GIF가 8MB를 넘으면 예전 PNG로 보냅니다.
-- 글꼴은 레포의 `fonts/`: 한글 Pretendard(Medium·SemiBold), 배그 숫자·영문 Teko. 맥 시스템 글꼴을 쓰지 않아 GitHub Actions(리눅스)에서도 같은 이미지가 나옵니다.
+- 글꼴은 레포의 `fonts/`: 한글 Pretendard(Medium·SemiBold), 배그 숫자·영문 Teko. 시스템 글꼴을 쓰지 않아 맥과 GitHub Actions(리눅스)에서 같은 이미지가 나옵니다.
 - 모든 리포트는 **@silent**, DM은 보내지 않습니다.
 - 디자인 원칙: 1px 선·테두리 없이 흐린 배경 그림 + 반투명 둥근 판 + 그늘로 구분, 도형은 4배로 그려 줄여 매끄럽게(`SS=4`). 아이콘은 Twemoji(디스코드와 같은 이모지 그림).
 - 자주 쓰는 이미지(지도·무기·챔피언·아이템·엠블럼·선수 얼굴·이모지)는 `data/assets/{pubg,lol,fc,common}/`에 저장해 재사용합니다.
@@ -100,9 +100,9 @@ DB에는 PUBG 경기 상세 JSON을 저장하지만 텔레메트리 본문은 �
 - 카드 왼쪽 색은 승리 파랑 / 패배 빨강입니다.
 - **API 한도:** 개인 키는 2분에 100회라 요청 사이를 1.3초 띄웁니다. 첫 실행은 최근 30경기를 리포트 없이 저장만 합니다.
 
-## `/user` 전적 감정서 (맥 상주일 때만)
+## `/user` 전적 감정서 (상주 실행일 때)
 
-Discord 봇이 계속 켜져 있어야 해서 Actions 운영 중에는 쓸 수 없습니다. 코드는 남겨 두었습니다.
+슬래시 명령은 Discord 봇이 계속 켜져 있어야 해서 `serve`(또는 `bot`)로 상주 실행할 때만 동작합니다. GitHub Actions의 `collect`는 리포트만 보냅니다.
 
 `/user 이름 [판수]` (기본 30판, 5~100) — 이름은 자동완성됩니다.
 
@@ -120,11 +120,11 @@ Discord 봇이 계속 켜져 있어야 해서 Actions 운영 중에는 쓸 수 �
 | 상태 | Actions 캐시: `state-<run id>`(DB·`fc_meta`, 매번), `assets-<hash>`(이미지 캐시, 바뀔 때만). 최근 2개만 남김 |
 | 로그 | Actions 실행 로그 (공개). 게임별 건수·에러만, `players.json`의 이름·닉네임·ID는 `***` |
 | 감시 | 실행마다 `HEALTHCHECK_IMPOSTER_FINDER_URL` 핑, 한 게임이라도 실패하면 `/fail` (period 15분, grace 10분) |
-| 라우팅 | `BOT_ENV=prod`면 게임별 `_PROD` 스레드, `dev`면 `_DEV` 스레드. PUBG 전용 스레드가 없으면 예전 글 리포트 스레드로 전송 |
+| 라우팅 | `BOT_ENV=prod`면 게임별 `_PROD` 스레드, `dev`면 `_DEV` 스레드. thread가 비어 있는 게임은 수집하지 않음 |
 | 데이터 | `data/imposter_finder.db` (PUBG·FC·롤 경기 및 자동 알림 기록), `players.json`, `data/fc_meta/`, `data/assets/` (이미지 캐시) — 모두 커밋 안 함 |
 
 - 실행이 겹치지 않게 `concurrency`로 하나씩. 10분 넘게 걸리면 멈춥니다(평소 1~3분).
 - 캐시가 사라지면 다음 실행은 기록만 하고 올리지 않습니다. 그 사이 끝난 경기는 리포트되지 않습니다.
 - FC 넥슨 API 사용량(`api_usage`)도 DB에 있어 캐시와 함께 이어집니다.
-- 맥 상주(`serve`)는 예비입니다. 켤 때는 Actions(cron-job.org)를 먼저 끕니다. 둘의 DB는 따로라 같이 켜면 중복 전송됩니다.
-- `pubg` 명령(`--list-matches` 등)은 디버깅용입니다. 이 경로는 예전 GitHub Actions용 `data/seen_matches.json`을 상태로 씁니다.
+- 상주 실행(`serve`)과 Actions는 DB가 따로라 함께 켜면 같은 경기가 두 번 올라갑니다. 하나만 씁니다.
+- 설정 방법은 [setup.md](setup.md).
