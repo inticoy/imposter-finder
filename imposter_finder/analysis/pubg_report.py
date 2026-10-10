@@ -201,7 +201,7 @@ def render_tdm_result(map_name: str, minutes: float, teams: list[dict],
     d.text((44, 40), f"{map_name} · 팀 데스매치 · {minutes:.0f}분", font=font(18, 4), fill=MUTED, anchor="lm")
     if winner:
         d.text((42, 128), "MATCH WINNER", font=teko(68, 600), fill=YELLOW, anchor="ls")
-        d.text((44, 184), f"TEAM {winner['id']:02d}", font=teko(65, 600), fill=TEXT, anchor="ls")
+        d.text((44, 184), winner["label"], font=teko(65, 600), fill=TEXT, anchor="ls")
     else:
         d.text((44, 154), "TEAM DEATHMATCH", font=teko(62, 600), fill=TEXT, anchor="ls")
     if winner and loser:
@@ -215,18 +215,21 @@ def render_tdm_result(map_name: str, minutes: float, teams: list[dict],
             d.text((801, 137), "WIN", font=teko(73, 600), fill=YELLOW, anchor="ms")
             d.text((801, 160), "라운드 기록 확인 불가", font=font(14, 4), fill=MUTED, anchor="mm")
     if rounds:
+        labels = {team["id"]: team["label"] for team in teams}
         for i, item in enumerate(rounds):
             x = 44 + i * 187
             color = YELLOW if winner and item["winner"] == winner["id"] else SQUAD[1]
             _panel(img, (x, 220, x + 169, 261), radius=9, alpha=110)
             _panel(img, (x + 10, 230, x + 15, 251), radius=2, alpha=255, color=color)
-            d.text((x + 24, 241), f"R{i + 1}  TEAM {item['winner']:02d}", font=font(15, 6), fill=TEXT, anchor="lm")
+            text = f"R{i + 1}  {labels[item['winner']]}"
+            size = next((n for n in (15, 14, 13, 12) if d.textlength(text, font=font(n, 6)) <= 138), 11)
+            d.text((x + 24, 241), text, font=font(size, 6), fill=TEXT, anchor="lm")
     elif winner and loser:
         for i, team in enumerate((winner, loser)):
             x = 44 + i * 187
             color = YELLOW if i == 0 else SQUAD[1]
             _panel(img, (x, 228, x + 5, 251), radius=2, alpha=255, color=color)
-            d.text((x + 16, 239), f"TEAM {team['id']:02d} · {'승리' if i == 0 else '패배'}",
+            d.text((x + 16, 239), f"{team['label']} · {'승리' if i == 0 else '패배'}",
                    font=font(16, 6), fill=TEXT, anchor="lm")
     return png(img)
 
@@ -248,7 +251,7 @@ def render_tdm_comparison(teams: list[dict], mvp: str | None, ace: str | None,
         accent = YELLOW if team.get("rank") == 1 else SQUAD[1]
         _panel(img, (x, 64, x + card_w, H - 20), radius=15, alpha=174)
         _panel(img, (x + 18, 79, x + 24, 104), radius=3, alpha=255, color=accent)
-        title = f"TEAM {team['id']:02d}"
+        title = team["label"]
         d.text((x + 38, 91), title, font=teko(33, 600), fill=TEXT, anchor="lm")
         if team.get("rank") == 1:
             d.text((x + card_w - 18, 91), "WIN", font=font(14, 6), fill=YELLOW, anchor="rm")
@@ -303,7 +306,7 @@ def render_tdm_weapons(teams: list[dict], weapon: str | None) -> bytes:
         x = margin + team_index * (card_w + gap)
         accent = YELLOW if team.get("rank") == 1 else SQUAD[1]
         _panel(img, (x + 18, 58, x + 24, 81), radius=3, alpha=255, color=accent)
-        d.text((x + 38, 70), f"TEAM {team['id']:02d}", font=teko(27, 600), fill=TEXT, anchor="lm")
+        d.text((x + 38, 70), team["label"], font=teko(27, 600), fill=TEXT, anchor="lm")
         for row, player in enumerate(team["players"]):
             y = 96 + row * 128
             _panel(img, (x, y, x + card_w, y + 116), radius=12, alpha=170)
@@ -987,6 +990,12 @@ def _build_tdm_report(platform: str, match: dict[str, Any], telemetry: list[dict
     mvp = mvp_player["friend_name"] if mvp_player else None
     ace = ace_player["friend_name"] if ace_player else None
     culprit = culprit_player["friend_name"] if culprit_player else None
+    # 팀 이름은 그 팀 MVP(진 팀은 ACE) 닉네임으로: TEAM 01 → TEAM TLBMiss. 친구가 없는 팀은 그 팀 1등
+    for team, lead in ((winner, mvp_player), (loser, ace_player)):
+        if team and team["players"]:
+            team["label"] = f"TEAM {(lead or team['players'][0])['name']}"
+    for team in teams:
+        team.setdefault("label", f"TEAM {team['id']:02d}")
     rounds = _tdm_rounds(float(attrs.get("duration") or 0), telemetry, winner["id"] if winner else None,
                          {team["id"] for team in teams})
     featured_weapon = next((player["weapons"][0]["weapon"] for player in (mvp_player, ace_player)
@@ -1002,9 +1011,9 @@ def _build_tdm_report(platform: str, match: dict[str, Any], telemetry: list[dict
     facts = {
         "모드": "팀 데스매치",
         "맵": map_name,
-        "승리 팀": f"TEAM {winner['id']:02d}" if winner else "확인 불가",
-        "라운드 승자": [f"TEAM {item['winner']:02d}" for item in rounds] if rounds else "확인 불가",
-        "팀": [{"이름": f"TEAM {team['id']:02d}", "순위": team["rank"], "팀 킬": team["kills"],
+        "승리 팀": winner["label"] if winner else "확인 불가",
+        "라운드 승자": [next(t["label"] for t in teams if t["id"] == item["winner"]) for item in rounds] if rounds else "확인 불가",
+        "팀": [{"이름": team["label"], "순위": team["rank"], "팀 킬": team["kills"],
                 "팀 피해량": round(team["damage"])} for team in teams],
         "선수": [{"이름": player["friend_name"], "역할": "MVP" if player is mvp_player else
                  "ACE" if player is ace_player else "범인" if player is culprit_player else "팀원",
@@ -1072,7 +1081,7 @@ def _evaluate(facts: dict, names: list[str], api_key: str | None, model: str, mo
                     if mode == "tdm" else "")
     placement_guidance = ("" if mode == "tdm" else
                           "1등이 아닌 판의 MVP에게 '치킨을 먹었다'처럼 이긴 듯한 말은 쓰지 말고 '아쉽게 놓쳤지만 ~는 빛났어요'처럼. ")
-    examples = (["좋은 예: 'TEAM 01이 두 라운드를 가져가며 승리했어요.'\n",
+    examples = (["좋은 예: 'TEAM ○○가 두 라운드를 가져가며 승리했어요.'\n",
                  "좋은 예: '○○는 패배 팀에서도 교전 기여가 돋보였어요.'\n"] if mode == "tdm" else
                 ["좋은 예 (형식만 참고, 내용은 이 경기 기록으로): '○○는 교전마다 먼저 눕혀줬네요. 총 감각이 살아 있었어요.'\n",
                  "좋은 예: '○○는 너무 일찍 혼자 끊겼어요. 다음 판엔 팀 옆에 붙어서 움직여보세요.'\n"])
