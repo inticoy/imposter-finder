@@ -1,4 +1,6 @@
-# 범인찾기 (imposter-finder)
+<p align="center"><img src="docs/images/logo.png" width="160" alt="범인찾기 캐릭터"></p>
+
+<h1 align="center">범인찾기 (imposter-finder)</h1>
 
 친구들끼리 한 **배틀그라운드 · 리그 오브 레전드 · 전략적 팀 전투 · FC 온라인** 경기를 찾아, 끝나면 Discord에 경기 분석 이미지와 한 줄 판독을 올려 주는 봇입니다. 누가 캐리했고(MVP) 누가 발목을 잡았는지(범인) 기록으로 가려 줍니다.
 

@@ -112,3 +112,7 @@ gh cache list                                        # 상태·이미지 캐시
 PYTHONPATH=. .venv/bin/python tools/readme_samples.py --pubg <match id> --lol <match id> --fc <match id>
 PYTHONPATH=. .venv/bin/python tools/readme_samples.py --compose-only   # API 호출 없이 합성만 다시
 ```
+
+## GitHub 공유 미리보기
+
+레포 Settings → General → Social preview에 `docs/images/social-preview.png`(1280×640)를 올립니다 (API로는 못 올림). 캐릭터 원본은 디스코드 봇 프로필과 같은 그림이고, README 로고는 `docs/images/logo.png`, 예시 그림 속 봇 프로필은 `docs/images/avatar.png`입니다.

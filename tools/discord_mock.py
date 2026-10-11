@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import re
 from io import BytesIO
+from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -17,6 +18,7 @@ BG, CARD, TEXT, MUTED = (49, 51, 56), (43, 45, 49), (219, 222, 225), (148, 155, 
 NAME, MENTION_BG, MENTION = (242, 243, 245), (60, 66, 112), (201, 205, 251)
 BUTTON, BLURPLE = (78, 80, 88), (88, 101, 242)
 W, LEFT, CARD_W, PAD, GAP = 600, 72, 512, 12, 4
+AVATAR = Path(__file__).resolve().parents[1] / "docs" / "images" / "avatar.png"  # 캐릭터 (봇 프로필과 같음)
 
 
 def _f(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
@@ -91,8 +93,10 @@ def render(files: list[tuple], payload: dict, mentions: list[str], channel: str,
     d.text((40 * S, bar / 2), channel, font=_f(16, True), fill=NAME, anchor="lm")
     d.line((0, bar, W * S, bar), fill=(31, 32, 35), width=S)
     # 봇 프로필·이름·앱 배지·시각
-    d.ellipse((16 * S, top, 56 * S, top + 40 * S), fill=(242, 169, 0))
-    d.text((36 * S, top + 20 * S), "범", font=_f(18, True), fill=(20, 20, 20), anchor="mm")
+    avatar = Image.open(AVATAR).convert("RGB").resize((40 * S, 40 * S), Image.LANCZOS)  # 봇 프로필 사진
+    ring = Image.new("L", (160 * S, 160 * S), 0)
+    ImageDraw.Draw(ring).ellipse((0, 0, ring.width - 1, ring.height - 1), fill=255)
+    base.paste(avatar, (16 * S, top), ring.resize(avatar.size, Image.LANCZOS))
     d.text((LEFT * S, top + 10 * S), "범인찾기", font=_f(16, True), fill=NAME, anchor="lm")
     x = LEFT * S + d.textlength("범인찾기", font=_f(16, True)) + 6 * S
     d.rounded_rectangle((x, top + 3 * S, x + 26 * S, top + 17 * S), radius=3 * S, fill=BLURPLE)
