@@ -27,7 +27,7 @@ cp players.example.json players.json    # 친구 목록 (커밋하지 않음)
 | `RIOT_TFT_API_KEY` | TFT 개인 키. Riot 키는 게임마다 따로라 롤 키로는 TFT가 403. 없으면 `RIOT_API_KEY`를 씀 |
 | `NEXON_API_KEY` | [NEXON Open API](https://openapi.nexon.com) (`test_` 키 하루 1,000회, 900회에서 멈춤) |
 | `GEMINI_API_KEY` | 총평·평가. 없으면 평가 없이 보냄 |
-| `HEALTHCHECK_IMPOSTER_FINDER_URL` | 선택: 실행마다 Healthchecks.io 핑, 한 게임이라도 실패하면 `/fail` |
+| `HEALTHCHECK_IMPOSTER_FINDER_URL` | 레거시 단독 실행용. 현재 Actions는 별도 `HEALTHCHECK_URL` Secret 사용 |
 | `DISCORD_GUILD_ID` | 선택: `/user` 슬래시 명령을 이 서버에 바로 반영 (상주 실행일 때) |
 | `*_POLL_INTERVAL_MINUTES` | 선택: 상주 실행(`serve`)의 수집 주기. Actions는 cron-job.org 주기를 따름 |
 
@@ -116,3 +116,7 @@ PYTHONPATH=. .venv/bin/python tools/readme_samples.py --compose-only   # API 호
 ## GitHub 공유 미리보기
 
 레포 Settings → General → Social preview에 `docs/images/social-preview.png`(1280×640)를 올립니다 (API로는 못 올림). 캐릭터 원본은 디스코드 봇 프로필과 같은 그림이고, README 로고는 `docs/images/logo.png`, 예시 그림 속 봇 프로필은 `docs/images/avatar.png`입니다.
+
+## 운영 모니터링
+
+Actions Secrets `MONITOR_ENDPOINT`, `MONITOR_TOKEN`, `HEALTHCHECK_URL`을 사용합니다. 게임별 장애는 공통 monitoring Worker로 보고하며, 최종 단계가 실행 완료 핑을 보냅니다. TFT 운영 전환은 워크플로 `MONITOR_ENABLED_GAMES`도 변경해야 합니다. [상세 안내](monitoring.md).

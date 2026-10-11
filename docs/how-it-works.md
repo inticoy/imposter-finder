@@ -143,7 +143,7 @@ DB에는 PUBG 경기 상세 JSON을 저장하지만 텔레메트리 본문은 �
 | 설정 | 시크릿 `ENV_FILE`(.env), `PLAYERS_JSON`(한 줄 JSON). `BOT_ENV`는 workflow에서 `prod` |
 | 상태 | Actions 캐시: `state-<run id>`(DB·`fc_meta`, 매번), `assets-<hash>`(이미지 캐시, 바뀔 때만). 최근 2개만 남김 |
 | 로그 | Actions 실행 로그 (공개). 게임별 건수·에러만, `players.json`의 이름·닉네임·ID는 `***` |
-| 감시 | 실행마다 `HEALTHCHECK_IMPOSTER_FINDER_URL` 핑, 한 게임이라도 실패하면 `/fail` (period 15분, grace 10분) |
+| 감시 | 게임별 오류 → monitoring Worker → Agents 포럼 스레드. Actions 완료 보고 → `HEALTHCHECK_URL` 핑 (15분 / grace 10분). 기능 장애와 실행 누락 분리 |
 | 라우팅 | `BOT_ENV=prod`면 게임별 `_PROD` 스레드, `dev`면 `_DEV` 스레드. thread가 비어 있는 게임은 수집하지 않음 |
 | 데이터 | `data/imposter_finder.db` (PUBG·FC·롤 경기 및 자동 알림 기록), `players.json`, `data/fc_meta/`, `data/assets/` (이미지 캐시) — 모두 커밋 안 함 |
 

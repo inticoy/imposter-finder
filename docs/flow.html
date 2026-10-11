@@ -236,7 +236,7 @@ code{background:var(--neutral-bg);padding:1px 5px;border-radius:4px;font-size:.9
         <tr><th>저장</th><td><code>data/imposter_finder.db</code>(PUBG·FC·롤 경기, 자동 알림 기록, API 사용량)·<code>data/fc_meta/</code>는 Actions 캐시에 매번, <code>data/assets/</code>(이미지 캐시)는 바뀔 때만. <code>players.json</code>·<code>.env</code>는 시크릿 — 모두 커밋 안 함</td></tr>
         <tr><th>이미지</th><td>Pillow, 가로 1000px. 배그 경로·교전, 롤 골드 차이, TFT 탈락 흐름은 GIF(장면 0.42초, 마지막 1.8초). 글꼴은 레포의 Pretendard·Teko</td></tr>
         <tr><th>AI</th><td>Gemini <code>gemini-3.5-flash-lite</code> — PUBG·FC·롤 총평·평가</td></tr>
-        <tr><th>감시</th><td>실행마다 Healthchecks 핑, 한 게임이라도 실패하면 <code>/fail</code></td></tr>
+        <tr><th>감시</th><td>게임별 오류 → monitoring → Agents 포럼. 실행 완료 보고 → Healthchecks 핑 (15분 / grace 10분)</td></tr>
         <tr><th>로그</th><td>Actions 실행 로그(공개) — 건수·에러만, 친구 이름·닉네임·ID는 <code>***</code></td></tr>
       </tbody>
     </table>
