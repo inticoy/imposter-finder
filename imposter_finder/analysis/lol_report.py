@@ -1,6 +1,8 @@
 """롤 친구 경기 리포트: 결과 배너 · 선수 · 오브젝트 · 골드 차이 이미지 + Gemini 요약·평가."""
 from __future__ import annotations
 
+from imposter_finder import monitoring
+
 import json
 from dataclasses import dataclass
 from typing import Any
@@ -512,7 +514,9 @@ def _evaluate(facts: dict, names: list[str], api_key: str | None, model: str) ->
                 best, best_over = result, over
             if not over:
                 break
+        monitoring.observe("lol.gemini")
         return {"summary": best.get("summary", ""), "lines": [best[n] for n in names if best.get(n)]}
     except Exception as exc:
+        monitoring.error("lol.gemini", exc, "AI 경기 평가 실패 — 기본 리포트는 유지", "Gemini 키·할당량 확인")
         print(f"[lol] gemini evaluation failed: {exc}")
         return {}

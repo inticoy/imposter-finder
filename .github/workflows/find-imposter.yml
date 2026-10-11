@@ -18,6 +18,12 @@ jobs:
   collect:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      MONITOR_ENDPOINT: ${{ secrets.MONITOR_ENDPOINT }}
+      MONITOR_TOKEN: ${{ secrets.MONITOR_TOKEN }}
+      MONITOR_SERVICE: imposter-finder
+      HEALTHCHECK_URL: ${{ secrets.HEALTHCHECK_URL }}
+      MONITOR_ENABLED_GAMES: pubg,fc,lol # TFT intentionally disabled until key approval
     steps:
       - uses: actions/checkout@v7
 
@@ -88,3 +94,9 @@ jobs:
             gh cache list --repo "$GITHUB_REPOSITORY" --key "$prefix" --sort created_at --order desc --limit 100 --json id --jq '.[2:][].id' |
               xargs -r -n1 gh cache delete --repo "$GITHUB_REPOSITORY"
           done
+
+      - name: Report workflow status and heartbeat
+        if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: python scripts/monitor_workflow.py

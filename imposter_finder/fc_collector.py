@@ -14,6 +14,7 @@ from imposter_finder.discord import DiscordClient
 from imposter_finder.games.fconline import FcMeta, FcOnlineClient, FcPrices, FcTeamColors, NexonApiError, NexonQuotaExceeded
 from imposter_finder.registry import load_fc_players
 from imposter_finder.storage import LocalStore
+from imposter_finder import monitoring
 
 PLATFORM = "fconline"  # match_notifications 구분자
 RECENT_LIMIT = 20  # 평소에는 최근 20경기만 본다 (15분 사이에 20경기 넘게 하지 않는다)
@@ -32,6 +33,8 @@ def run_fc_cycle(settings: Settings, store: LocalStore, notify: bool) -> dict[st
     _colors = _colors or FcTeamColors(ROOT_DIR / "data" / "fc_meta")
     _prices = _prices or FcPrices(ROOT_DIR / "data" / "fc_meta", _meta)
     players = load_fc_players(settings.players_path)
+    if not players:
+        monitoring.observe("fc.accounts", "degraded", "no-accounts", "FC 등록 계정 없음", "PLAYERS_JSON 확인")
     client = FcOnlineClient(settings.nexon_api_key or "", lambda day: store.add_api_call("nexon", day),
                             settings.nexon_daily_limit)
 
@@ -47,9 +50,11 @@ def run_fc_cycle(settings: Settings, store: LocalStore, notify: bool) -> dict[st
             friends[ouid] = Friend(player.name, player.discord_user_id)
             for match_id in client.match_ids(ouid, limit=limit):
                 seen_by.setdefault(match_id, set()).add(ouid)
+            monitoring.observe("fc.accounts")
         except NexonQuotaExceeded:
             raise
         except NexonApiError as exc:
+            monitoring.error("fc.accounts", exc, "일부 FC 계정 조회 실패", "Nexon 키 또는 등록 계정 확인")
             # 닉네임 변경 등으로 한 명이 실패해도 나머지는 계속한다
             print(f"[fc] skip {player.name}: {exc}")
 

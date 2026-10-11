@@ -5,6 +5,8 @@
 """
 from __future__ import annotations
 
+from imposter_finder import monitoring
+
 import json
 import math
 from datetime import datetime
@@ -1117,7 +1119,9 @@ def _evaluate(facts: dict, names: list[str], api_key: str | None, model: str, mo
                 best, best_over = result, over
             if not over:
                 break
+        monitoring.observe("pubg.gemini")
         return {"summary": best.get("summary", ""), "lines": [best[n] for n in names if best.get(n)]}
     except Exception as exc:
+        monitoring.error("pubg.gemini", exc, "AI 경기 평가 실패 — 기본 리포트는 유지", "Gemini 키·할당량 확인")
         print(f"[pubg] gemini evaluation failed: {exc}")
         return {}

@@ -38,3 +38,7 @@
 | [docs/fc-online.md](docs/fc-online.md) | FC 온라인 데이터 출처와 제약 |
 
 Python 3.14 · Pillow · PUBG Developer API · Riot API · NEXON Open API · Gemini · Discord REST. 글꼴은 [Pretendard](https://github.com/orioncactus/pretendard)와 [Teko](https://github.com/googlefonts/teko) (OFL).
+
+## 운영 모니터링
+
+개인 Agents 서버에 기능 장애·오류 요약·복구 알림을 모읍니다. 실행 누락은 Healthchecks가 별도로 감지합니다. [모니터링 설정·운영 안내](docs/monitoring.md).

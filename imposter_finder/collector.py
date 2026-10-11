@@ -9,6 +9,7 @@ from imposter_finder.discord import DiscordClient
 from imposter_finder.games.pubg import PubgClient
 from imposter_finder.registry import PubgPlayer, load_pubg_players
 from imposter_finder.storage import LocalStore
+from imposter_finder import monitoring
 
 
 def refresh_player_history(client: PubgClient, store: LocalStore, player: PubgPlayer, limit: int = 30) -> int:
@@ -24,10 +25,13 @@ def refresh_player_history(client: PubgClient, store: LocalStore, player: PubgPl
 def run_collection_cycle(settings: Settings, store: LocalStore, notify: bool) -> dict[str, int]:
     """Collect all registered players, then optionally publish unprocessed team matches."""
     players = load_pubg_players(settings.players_path)
+    if not players:
+        monitoring.observe("pubg.accounts", "degraded", "no-accounts", "배그 등록 계정 없음", "PLAYERS_JSON 확인")
     client = PubgClient(settings.pubg_api_key)
     fetched: dict[tuple[str, str], dict[str, Any]] = {}
     for player in players:
         match_ids = client.get_recent_match_ids(player.platform, player.nickname, 30)
+        monitoring.observe("pubg.accounts")
         for match_id in match_ids:
             key = (player.platform, match_id)
             match = fetched.get(key)

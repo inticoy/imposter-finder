@@ -5,6 +5,8 @@ TFT는 개인전이라 범인 없이 보여 주기만 한다. 친구가 1등을 
 """
 from __future__ import annotations
 
+from imposter_finder import monitoring
+
 import json
 import urllib.parse
 from dataclasses import dataclass
@@ -426,7 +428,9 @@ def _evaluate(facts: dict, names: list[str], api_key: str | None, model: str) ->
                 best, best_over = result, over
             if not over:
                 break
+        monitoring.observe("tft.gemini")
         return {"summary": best.get("summary", ""), "lines": [best[n] for n in names if best.get(n)]}
     except Exception as exc:
+        monitoring.error("tft.gemini", exc, "AI 경기 평가 실패 — 기본 리포트는 유지", "Gemini 키·할당량 확인")
         print(f"[tft] gemini evaluation failed: {exc}")
         return {}

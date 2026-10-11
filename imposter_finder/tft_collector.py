@@ -13,6 +13,7 @@ from imposter_finder.discord import DiscordClient
 from imposter_finder.games.lol import RiotApiError, RiotClient
 from imposter_finder.registry import load_lol_accounts
 from imposter_finder.storage import LocalStore
+from imposter_finder import monitoring
 
 PLATFORM = "tft"  # match_notifications 구분자
 RECENT_COUNT = 10
@@ -23,6 +24,8 @@ RANK_FRESH_S = 3600  # 지난 랭크 값이 이보다 오래되면 여러 판이
 
 def run_tft_cycle(settings: Settings, store: LocalStore, notify: bool) -> dict[str, int]:
     accounts = load_lol_accounts(settings.players_path)
+    if not accounts:
+        monitoring.observe("tft.accounts", "degraded", "no-accounts", "TFT 등록 계정 없음", "PLAYERS_JSON 확인")
     client = RiotClient(settings.riot_tft_api_key or "")
     friends: dict[str, Friend] = {}
     seen_by: dict[str, set[str]] = {}
@@ -35,7 +38,9 @@ def run_tft_cycle(settings: Settings, store: LocalStore, notify: bool) -> dict[s
             friends[puuid] = Friend(account.name, account.discord_user_id)
             for match_id in client.tft_match_ids(puuid, RECENT_COUNT if notify else BACKFILL_COUNT):
                 seen_by.setdefault(match_id, set()).add(account.name)
+            monitoring.observe("tft.accounts")
         except RiotApiError as exc:
+            monitoring.error("tft.accounts", exc, "일부 TFT 계정 조회 실패", "TFT 키 승인·유효기간 확인")
             print(f"[tft] skip {account.riot_id}: {exc}")  # 닉네임 변경 등은 그 계정만 건너뛴다
 
     # 같은 사람의 부계정끼리 겹친 경기는 친구 로비가 아니라 사람 기준 두 명 이상만
@@ -54,7 +59,9 @@ def run_tft_cycle(settings: Settings, store: LocalStore, notify: bool) -> dict[s
         try:
             if rank := client.tft_rank(puuid):
                 ranks[puuid] = rank | {"fetched_at": time.time()}
+            monitoring.observe("tft.rank")
         except RiotApiError as exc:
+            monitoring.error("tft.rank", exc, "TFT 랭크 조회 실패")
             print(f"[tft] rank failed: {exc}")
     tiers = {}
     for puuid, rank in ranks.items():

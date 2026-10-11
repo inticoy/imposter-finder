@@ -4,6 +4,8 @@
 """
 from __future__ import annotations
 
+from imposter_finder import monitoring
+
 import json
 from dataclasses import dataclass
 from io import BytesIO
@@ -685,7 +687,9 @@ def _evaluate(left: Team, right: Team, cards: list[dict], meta: FcMeta, api_key:
                 best, best_over = result, over
             if not over:
                 break
+        monitoring.observe("fc.gemini")
         return {"summary": best.get("summary", ""), "lines": [best[n] for n in names if best.get(n)]}
     except Exception as exc:  # 한도 초과 등: 평가만 빼고 리포트는 보낸다
+        monitoring.error("fc.gemini", exc, "AI 경기 평가 실패 — 기본 리포트는 유지", "Gemini 키·할당량 확인")
         print(f"[fc] gemini evaluation failed: {exc}")
         return {}

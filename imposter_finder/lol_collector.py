@@ -13,6 +13,7 @@ from imposter_finder.discord import DiscordClient
 from imposter_finder.games.lol import DDragon, RiotApiError, RiotClient
 from imposter_finder.registry import load_lol_accounts
 from imposter_finder.storage import LocalStore
+from imposter_finder import monitoring
 
 PLATFORM = "lol"  # match_notifications 구분자
 RECENT_COUNT = 10  # 15분 사이에 10판 넘게 하지 않는다
@@ -24,6 +25,8 @@ _ddragon = DDragon()
 
 def run_lol_cycle(settings: Settings, store: LocalStore, notify: bool) -> dict[str, int]:
     accounts = load_lol_accounts(settings.players_path)
+    if not accounts:
+        monitoring.observe("lol.accounts", "degraded", "no-accounts", "롤 등록 계정 없음", "PLAYERS_JSON 확인")
     client = RiotClient(settings.riot_api_key or "")
     friends: dict[str, Friend] = {}
     seen_by: dict[str, set[str]] = {}
@@ -36,7 +39,9 @@ def run_lol_cycle(settings: Settings, store: LocalStore, notify: bool) -> dict[s
             friends[puuid] = Friend(account.name, account.discord_user_id)
             for match_id in client.match_ids(puuid, RECENT_COUNT if notify else BACKFILL_COUNT):
                 seen_by.setdefault(match_id, set()).add(account.name)
+            monitoring.observe("lol.accounts")
         except RiotApiError as exc:
+            monitoring.error("lol.accounts", exc, "일부 롤 계정 조회 실패", "Riot 키 또는 등록 계정 확인")
             print(f"[lol] skip {account.riot_id}: {exc}")  # 닉네임 변경 등은 그 계정만 건너뛴다
 
     # 같은 사람의 부계정끼리 겹친 경기는 친구전이 아니라 사람 기준 두 명 이상만 본다
@@ -66,7 +71,9 @@ def run_lol_cycle(settings: Settings, store: LocalStore, notify: bool) -> dict[s
         if match["info"]["queueId"] not in (1700, 1750):  # 아레나는 골드 그래프를 쓰지 않는다
             try:
                 timeline = client.timeline(match_id)
+                monitoring.observe("lol.timeline")
             except RiotApiError as exc:
+                monitoring.error("lol.timeline", exc, "롤 타임라인 조회 실패")
                 print(f"[lol] timeline failed {match_id}: {exc}")
         payload, files = build_report(match, timeline, friends, _ddragon, settings.gemini_api_key, settings.gemini_model)
         for thread_id in settings.discord_lol_thread_ids:
