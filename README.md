@@ -23,7 +23,7 @@
 </p>
 
 - **배그**: 결과·순위 · 스쿼드 기록(MVP·범인) · 이동 경로 GIF · 교전 흐름 GIF · 쓴 무기 / 팀 데스매치는 라운드 결과·양 팀 비교
-- **롤**: 결과 · 선수 비교(MVP·ACE·범인) · 오브젝트 · 골드 차이 GIF · OP.GG 버튼 / 부계정도 사람 기준으로
+- **롤**: 결과 · 선수 비교(MVP·ACE·범인) · 오브젝트 · 골드 차이 GIF · OP.GG 버튼 / 부계정도 사람 기준으로. 타임라인에 근거한 총평 · 친구 전원 평가 · 다음 판 개선 방향
 - **TFT**: 요약(꼬마 전설·핵심 챔피언·덱 이름, 친구가 못 하면 그 판 1등) · 친구 덱(시너지·별·아이템·티어 LP) · 탈락 흐름 GIF · lolchess.gg 버튼 / 개인전이라 범인 없음
 - **FC**: 스코어보드(엠블럼·구단 가치·맞대결 10경기) · MVP·범인 · 경기 기록 · 슈팅맵 · 라인업
 
@@ -42,3 +42,10 @@ Python 3.14 · Pillow · PUBG Developer API · Riot API · NEXON Open API · Gem
 ## 운영 모니터링
 
 개인 Agents 서버에 기능 장애·오류 요약·복구 알림을 모읍니다. 실행 누락은 Healthchecks가 별도로 감지합니다. [모니터링 설정·운영 안내](docs/monitoring.md).
+
+### 롤 경기 흐름 GIF 미리보기
+
+`PYTHONPATH=. .venv/bin/python tools/lol_kill_gif.py`로 로컬 샘플을 렌더링합니다.
+`data/lol-gif-preview/`의 `match.json`, `timeline.json`, `names.json`(PUUID → 친구 이름)을 사용합니다.
+경로와 부활 시각은 관측 자료를 바탕으로 한 추정이며, 샘플 데이터·결과 파일은 Git에서 제외합니다.
+자동 리포트에는 아직 연결하지 않았습니다. 연결 전에는 긴 경기의 재생 속도를 조절해 8MiB 이내로 제한해야 합니다.

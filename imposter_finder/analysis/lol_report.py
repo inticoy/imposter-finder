@@ -334,12 +334,147 @@ def _monster_events(timeline: dict | None, team_id: int) -> list[tuple[float, st
     return events
 
 
-def _gold_story(d: list[int]) -> str:
+def _gold_story(d: list[int], timestamps: list[int] | None = None) -> str:
     """골드 흐름을 모델이 잘못 읽지 않게 사실 문장으로 정리한다."""
     at15 = min(15, len(d) - 1)
     worst, best = min(range(len(d)), key=lambda i: d[i]), max(range(len(d)), key=lambda i: d[i])
-    return (f"15분 {d[at15]:+,}골드, 최대 열세 {worst}분 {d[worst]:+,}, 최대 우세 {best}분 {d[best]:+,}, "
+    label = lambda i: _clock(timestamps[i]) if timestamps else f"{i}분"
+    return (f"{label(at15)} {d[at15]:+,}골드, 최대 열세 {label(worst)} {d[worst]:+,}, 최대 우세 {label(best)} {d[best]:+,}, "
             f"종료 시 {d[-1]:+,}")
+
+
+def _clock(ms: int) -> str:
+    return f"{ms // 60000}:{ms // 1000 % 60:02d}"
+
+
+def _region(position: dict, map_id: int) -> str:
+    """Coarse terrain classification, not proof of lane assignment or isolation."""
+    if map_id != 11 or not position:
+        return "지역 미분류"
+    x, y = position.get("x", 0), position.get("y", 0)
+    if x + y < 4300 or x + y > 25500:
+        return "기지 부근"
+    if abs(y - x) < 1500:
+        return "미드 부근"
+    if x < 2200 or y > 12800:
+        return "탑 부근"
+    if y < 2200 or x > 12800:
+        return "바텀 부근"
+    if abs(x + y - 14800) < 1700:
+        return "강 부근"
+    return "정글 부근"
+
+
+def _timeline_facts(info: dict, timeline: dict | None, mine: list[dict], friends: dict) -> dict:
+    if not timeline:
+        return {"가용성": "타임라인 없음. 최종 통계로만 평가"}
+    frames = timeline["info"]["frames"]
+    events = sorted((e for f in frames for e in f["events"]), key=lambda e: e.get("timestamp", 0))
+    players = {p["participantId"]: p for p in info["participants"]}
+    team_id = mine[0]["teamId"]
+    ids = {p["participantId"] for p in mine}
+    names = {p["participantId"]: friends[p["puuid"]].name for p in mine}
+    kills = [e for e in events if e["type"] == "CHAMPION_KILL"]
+    objectives = []
+    for e in events:
+        kind, team = None, None
+        if e["type"] == "ELITE_MONSTER_KILL":
+            kind = {"DRAGON": "드래곤", "BARON_NASHOR": "바론", "RIFTHERALD": "전령",
+                    "HORDE": "공허 유충", "ATAKHAN": "아타칸"}.get(e.get("monsterType"))
+            team = e.get("killerTeamId") or players.get(e.get("killerId"), {}).get("teamId")
+        elif e["type"] == "BUILDING_KILL":
+            kind = {"TOWER_BUILDING": "포탑", "INHIBITOR_BUILDING": "억제기"}.get(e.get("buildingType"))
+            team = 300 - e["teamId"]
+        if kind and team in (100, 200):
+            objectives.append((e, kind, team))
+    evidence = []
+    gold_at = [(f["timestamp"], sum(pf["totalGold"] * (1 if players[int(pid)]["teamId"] == team_id else -1)
+                                  for pid, pf in f["participantFrames"].items())) for f in frames]
+    for e, kind, team in objectives:
+        ts = e["timestamp"]
+        before = [f"{names[k['victimId']]} {_clock(k['timestamp'])} {_region(k.get('position', {}), info['mapId'])}"
+                  for k in kills if k["victimId"] in ids and 0 <= ts - k["timestamp"] <= 45000]
+        evidence.append({"시각": _clock(ts), "종류": kind, "팀": "우리" if team == team_id else "상대",
+                         "직전 45초 내 친구 사망": before,
+                         "직전 관측 골드 차이": next((v for t, v in reversed(gold_at) if t <= ts), None),
+                         "다음 관측 골드 차이": next((v for t, v in gold_at if t > ts), None)})
+    per_player = []
+    for pid in sorted(ids):
+        deaths = [e for e in kills if e["victimId"] == pid]
+        participation = [e for e in kills if e["killerId"] == pid or pid in e.get("assistingParticipantIds", [])]
+        alive_times = [e["timestamp"] for e in participation]
+        alive_times += [f["timestamp"] for f in frames
+                        if f["participantFrames"].get(str(pid), {}).get("championStats", {}).get("health", 0) > 0]
+        waiting_losses = []
+        for death in deaths:
+            start = death["timestamp"]
+            # A later death also ends this interval: life must have occurred before it.
+            end = min([ts for ts in alive_times if ts > start]
+                      + [e["timestamp"] for e in deaths if e["timestamp"] > start]
+                      + [info["gameDuration"] * 1000 + 1])
+            zeros = [f["timestamp"] for f in frames if start <= f["timestamp"] < end
+                     and f["participantFrames"].get(str(pid), {}).get("championStats", {}).get("health") == 0]
+            through = max(zeros, default=start)
+            waiting_losses.extend(f"{_clock(e['timestamp'])} {kind}" for e, kind, team in objectives
+                                  if team != team_id and start <= e["timestamp"] <= through)
+        progress = []
+        selected = set(range(5, info["gameDuration"] // 60 + 1, 5))
+        for i, f in enumerate(frames):
+            pf = f["participantFrames"].get(str(pid))
+            if not pf or (f["timestamp"] // 60000 not in selected and i != len(frames) - 1):
+                continue
+            progress.append({"시각": _clock(f["timestamp"]), "레벨": pf.get("level"),
+                             "CS": pf.get("minionsKilled", 0) + pf.get("jungleMinionsKilled", 0),
+                             "누적 골드": pf.get("totalGold"), "관측 지역(근사)": _region(pf.get("position", {}), info["mapId"])})
+        plates = [e for e in events if e["type"] == "TURRET_PLATE_DESTROYED" and e.get("killerId") == pid]
+        per_player.append({"이름": names[pid],
+                           "킬 관여": [{"시각": _clock(e["timestamp"]),
+                                       "종류": "처치" if e["killerId"] == pid else "어시스트",
+                                       "피해자 사망 지역(근사)": _region(e.get("position", {}), info["mapId"])} for e in participation],
+                           "사망": [{"시각": _clock(e["timestamp"]),
+                                     "지역(근사)": _region(e.get("position", {}), info["mapId"])} for e in deaths],
+                           "체력 0 관측으로 확인한 사망 대기 중 상대 오브젝트": waiting_losses,
+                           "포탑 방패 파괴 관여": [{"시각": _clock(e["timestamp"]), "지역(근사)": _region(e.get("position", {}), info["mapId"])} for e in plates], "성장 추이": progress})
+    diffs = _gold_diffs(info, timeline, team_id)
+    reversals = []
+    last_nonzero = None
+    for i, value in enumerate(diffs):
+        if value == 0:
+            continue
+        if last_nonzero is not None and value * last_nonzero < 0:
+            reversals.append({"시각": _clock(frames[i]["timestamp"]), "우리 골드 차이": value,
+                              "전환": "우세로 전환" if value > 0 else "열세로 전환"})
+        last_nonzero = value
+    specials = [{"시각": _clock(e["timestamp"]), "종류": e.get("killType"),
+                 "연속 처치": e.get("multiKillLength"),
+                 "선수": names.get(e.get("killerId"), "우리 팀원" if players.get(e.get("killerId"), {}).get("teamId") == team_id else "상대")}
+                for e in events if e["type"] == "CHAMPION_SPECIAL_KILL"]
+    return {"근거 한계": "위치 지역은 근사. 킬 좌표는 피해자 사망 위치이며 어시스트 선수의 위치가 아님. "
+            "스냅샷은 약 1분 간격. 혼자 있었는지, 와드 중 사망했는지, 합류 지연, 스킬·한타 딜량은 알 수 없음. "
+            "사망과 상대 오브젝트의 시간적 근접은 인과관계 증명이 아님. 사망 대기는 체력0 관측으로 확인한 범위만 포함.",
+            "선수별 기록": per_player, "오브젝트 시간순": evidence, "골드 우열 전환": reversals, "특수 처치": specials}
+
+
+def evaluation_facts(match: dict, timeline: dict | None, friends: dict, ddragon: DDragon) -> tuple[dict, list[str]]:
+    """Shared evidence for automatic reports and text-only historical refreshes."""
+    info = match["info"]
+    mine = [p for p in info["participants"] if p["puuid"] in friends]
+    if not mine:
+        raise ValueError("평가할 등록 친구가 없는 경기")
+    stats = _scores(info["participants"], info["gameDuration"] / 60)
+    ranked = sorted(mine, key=lambda p: -stats[p["puuid"]]["score"])
+    team_id = mine[0]["teamId"]
+    objectives = {t["teamId"]: t["objectives"] for t in info["teams"]}
+    diffs = _gold_diffs(info, timeline, team_id) if timeline else []
+    facts = {"결과": "승리" if mine[0]["win"] else "패배",
+             "오브젝트(우리:상대)": {label: f"{objectives[team_id].get(key, {}).get('kills', 0)}:"
+                                     f"{objectives[300-team_id].get(key, {}).get('kills', 0)}" for label, key, _ in OBJECTIVES},
+             "골드 흐름(우리 팀 기준)": _gold_story(diffs, [f["timestamp"] for f in timeline["info"]["frames"]]) if diffs else "없음",
+             "선수": [_player_fact(p, friends[p["puuid"]].name,
+                                   ("MVP" if p["win"] else "ACE") if i == 0 else "범인" if i == len(ranked)-1 and i > 0 else "팀원",
+                                   stats, ddragon) for i, p in enumerate(ranked)],
+             "타임라인": _timeline_facts(info, timeline, mine, friends)}
+    return facts, [friends[p["puuid"]].name for p in ranked]
 
 
 def build_report(match: dict[str, Any], timeline: dict[str, Any] | None, friends: dict[str, Friend],
@@ -397,11 +532,8 @@ def build_report(match: dict[str, Any], timeline: dict[str, Any] | None, friends
         files.append(("gold.gif", animated, "image/gif") if len(animated) <= GIF_MAX_BYTES
                      else ("gold.png", render_gold(diffs, events, splash)))
 
-    facts = {"결과": "승리" if won else "패배", "오브젝트(우리:상대)": {o[0]: f"{o[1]}:{o[2]}" for o in objectives},
-             "골드 흐름(우리 팀 기준)": _gold_story(diffs) if diffs else "없음",
-             "선수": [_player_fact(p, name(p), best_badge if p is mvp else "범인", stats, ddragon)
-                    for p in (mvp, culprit) if p]}
-    ai = _evaluate(facts, [name(p) for p in (mvp, culprit) if p], gemini_api_key, gemini_model)
+    facts, evaluation_names = evaluation_facts(match, timeline, friends, ddragon)
+    ai = _evaluate(facts, evaluation_names, gemini_api_key, gemini_model)
     return _payload(mine, friends, won, files, ai, opgg_link([mvp] + [p for p in mine if p is not mvp], info)), files
 
 
@@ -447,25 +579,21 @@ def _build_arena(match: dict, friends: dict[str, Friend], ddragon: DDragon, key:
                                           {"label": f"친구 {len(mine)}명", "kills": None,
                                            "icons": [(c["icon_url"], True) for c in columns]}, None)),
              ("players.png", render_players(columns, rows, splash))]
-    facts = {"모드": "아레나 (2인 1조, 순위전)", "선수": [{"이름": name(p), "역할": best_badge if p is mvp else "범인",
+    facts = {"모드": "아레나 (2인 1조, 순위전)", "선수": [{"이름": name(p), "역할": best_badge if p is mvp else "범인" if p is culprit else "팀원",
                                                      "순위": place(p), "딜량": p["totalDamageDealtToChampions"],
                                                      "KDA": f"{p['kills']}/{p['deaths']}/{p['assists']}"}
-                                                    for p in (mvp, culprit) if p]}
-    ai = _evaluate(facts, [name(p) for p in (mvp, culprit) if p], key, model)
+                                                    for p in ranked]}
+    ai = _evaluate(facts, [name(p) for p in ranked], key, model)
     return _payload(mine, friends, best <= 4, files, ai, opgg_link([mvp] + [p for p in mine if p is not mvp], info)), files
 
 
 def _payload(mine: list, friends: dict, won: bool, files: list[tuple], ai: dict, link: str | None = None) -> dict:
     ids = list(dict.fromkeys(friends[p["puuid"]].discord_user_id for p in mine if friends[p["puuid"]].discord_user_id))
     components: list[dict] = [{"type": 12, "items": [{"media": {"url": f"attachment://{name}"}}]} for name, *_ in files]
-    # 총평과 평가는 이미지 아래에 모은다
-    words = []
-    if ai.get("summary"):
-        words.append(f"**총평**\n{ai['summary']}")
-    if ai.get("lines"):
-        words.append("**평가**\n" + "\n".join(ai["lines"]))
-    if words:
-        components.append({"type": 10, "content": "\n\n".join(words)})
+    # One bounded text component keeps historical edits independent of images.
+    text = evaluation_text(ai)
+    if text:
+        components.append({"type": 10, "content": text})
     if link:  # 맨 아래 OP.GG 버튼
         label = "OP.GG 경기 전적 보기" if "/matches/" in link else "OP.GG 전적 보기"
         components.append({"type": 1, "components": [{"type": 2, "style": 5, "label": label, "url": link}]})
@@ -477,46 +605,141 @@ def _payload(mine: list, friends: dict, won: bool, files: list[tuple], ai: dict,
     }
 
 
+def _plain(value: str) -> str:
+    # Model output is plain prose; the formatter alone controls markdown/mentions.
+    import re
+    return re.sub(r"[\n\r*_`#<>]", " ", value).strip()
+
+
+def _wrap(value: str, width: int) -> list[str]:
+    import textwrap
+    return textwrap.wrap(value, width=width, break_long_words=True, break_on_hyphens=False) or []
+
+
+def _format_evaluation(result: dict, names: list[str]) -> dict:
+    summary = []
+    for line in result.get("summary", [])[:4]:
+        if isinstance(line, str):
+            summary.extend(_wrap(_plain(line), MAX_LINE_CHARS))
+    lines = []
+    for name in names:
+        parts = result.get("players", {}).get(name, [])
+        prose = " ".join(_plain(s) for s in parts[:2] if isinstance(s, str))
+        prefix = f"**{_plain(name)}** "
+        wrapped = _wrap(prose, MAX_LINE_CHARS - len(prefix))
+        if wrapped:
+            lines.append(prefix + wrapped[0] + "".join("\n  " + s for s in wrapped[1:]))
+    next_steps = []
+    for line in result.get("next", [])[:3]:
+        if isinstance(line, str):
+            wrapped = _wrap(_plain(line), MAX_LINE_CHARS - 2)
+            if wrapped:
+                next_steps.append("• " + wrapped[0] + "".join("\n  " + s for s in wrapped[1:]))
+    return {"summary": "\n".join(summary), "lines": lines, "next": next_steps}
+
+
+def evaluation_text(ai: dict) -> str:
+    words = []
+    if ai.get("summary"):
+        words.append("**총평**\n" + ai["summary"])
+    if ai.get("lines"):
+        words.append("**평가**\n" + "\n".join(ai["lines"]))
+    if ai.get("next"):
+        words.append("**다음 판엔**\n" + "\n".join(ai["next"]))
+    text = "\n\n".join(words)
+    # Discord text components permit 4000 chars; split only at complete lines.
+    kept, size = [], 0
+    for line in text.splitlines():
+        if size + len(line) + bool(kept) > 4000:
+            break
+        kept.append(line)
+        size += len(line) + (1 if len(kept) > 1 else 0)
+    return "\n".join(kept)
+
+
 def _evaluate(facts: dict, names: list[str], api_key: str | None, model: str) -> dict:
-    """Gemini: 경기 흐름 한 문장 + MVP·범인 한 문장씩. 실패하면 빈 값."""
+    """Evidence-based team review and every friend's assessment, with bounded lines."""
     if not api_key:
         return {}
-    keys = ["summary"] + names
-    prompt = ("리그 오브 레전드 경기 기록이야. 친구끼리 보는 디스코드 리포트에 넣을 한마디를 써줘. "
-              "스탯은 이미 이미지로 보여주니까 숫자를 읊지 말고, 해설자나 코치처럼 느낌과 조언을 말해줘.\n"
-              "summary: 이 판을 한 문장으로 (50자 이내, 넘으면 안 됨). 무엇이 승부를 갈랐는지, 아쉬운 점이나 다음 판에 해볼 것. "
-              "골드 흐름과 오브젝트 기록이 근거지만 숫자는 쓰지 마. 기록에 없는 장면(한타, 갱킹 등)을 지어내지 마.\n"
-              "각 선수 이름: 그 친구에게 하는 한마디 (45자 이내로 짧게, 넘으면 안 됨, 1~2문장, 이름으로 시작, 은/는 받침에 맞게). "
-              "MVP는 이긴 팀의 활약을 칭찬하고, ACE는 진 팀에서도 돋보인 플레이를 칭찬해. "
-              "범인은 무엇이 아쉬웠는지와 다음에 해볼 것 (예: 다음 판엔 ~해보세요, ~에 신경 써보세요). "
-              "판단은 기록(포지션, 데스, 시야, 딜량, 킬 관여 등)에 근거하고, 숫자는 꼭 필요할 때 하나만.\n"
-              "좋은 예 (형식만 참고, 내용은 이 경기 기록으로): '○○는 앞라인과 딜을 다 챙겼네요. 오늘 판은 ○○가 끌고 갔습니다.'\n"
-              "좋은 예: '○○는 너무 자주 끊겼어요. 다음 판엔 합류 전에 시야부터 잡아보세요.'\n"
-              "나쁜 예: '○○는 딜량 44,621과 킬 관여 75%를 기록했습니다.' (숫자 나열), 예시 문장이나 표현을 그대로 베끼기\n"
-              "ACE에게 '이겼다'처럼 승리한 듯한 말은 쓰지 말고 '졌지만 ~는 빛났어요'처럼. "
-              "한타·갱킹·라인전 같은 장면 묘사는 기록에 없으니 쓰지 마.\n"
-              "이모지·줄표 금지, 존댓말(~요, ~습니다)로 친근하게.\n\n"
-              + json.dumps(facts, ensure_ascii=False))
+    names = list(dict.fromkeys(names))
+    schema = {"type": "object", "properties": {
+        "summary": {"type": "array", "items": {"type": "string"}, "minItems": 3, "maxItems": 4},
+        "players": {"type": "object", "properties": {
+            n: {"type": "array", "items": {"type": "string"}, "minItems": 2, "maxItems": 2} for n in names},
+                    "required": names},
+        "next": {"type": "array", "items": {"type": "string"}, "minItems": 2, "maxItems": 3}},
+        "required": ["summary", "players", "next"]}
+    prompt = (
+        "리그 오브 레전드 친구 경기의 디스코드 리포트를 작성하세요. 제공한 기록만 근거로 쓰세요.\n"
+        "summary: 승부 흐름·중요한 전환·팀의 장단점을 연결한 3~4문장. 각 문장은 52자 이하. "
+        "오브젝트 종류·골드 전환·초중후반 중 서로 다른 구체적 근거를 최소 두 개 언급하세요. "
+        "누가 이겼는지뿐 아니라 언제 흐름이 바뀌었는지, 어떤 점이 아쉬웠는지 설명하세요.\n"
+        "players: 지정된 친구 전원에게 각각 2문장. 구체적인 기여와 아쉬운 점/개선 방향을 "
+        "포지션과 시간순 기록에 맞춰 쓰세요. 이름은 formatter가 붙이니 문장 안에 반복하지 마세요. "
+        "선수별 각 문장은 42자 이하. 성장·포탑 피해·시야·오브젝트·방패·킬 관여에서 각자의 특색을 설명하세요. "
+        "모두에게 똑같이 사망을 지적하지 마세요. 아쉬움을 뒷받침할 기록이 없으면 기여를 더 설명하세요.\n"
+        "next: 팀 전체가 다음 판에 적용할 구체적인 행동 2~3개. 각 48자 이하. "
+        "이 경기 근거와 연결하되 기록에서 확인한 사실과 앞으로의 제안을 구분하세요. "
+        "짧은 행동형(~하기/~하지 않기)으로 쓰고 ~하겠습니다 같은 다짐은 쓰지 마세요. "
+        "초반/후반·지역·오브젝트명 등 상황과 행동을 함께 쓰세요. "
+        "시야 넓히기·생존 관리하기 같은 추상적인 말만 쓰지 마세요.\n"
+        "챔피언 이름·KDA·데스 수(한 차례 사망 같은 한글 횟수도 포함)·MVP/ACE/범인 배지는 텍스트에 쓰지 마세요. 이미지에 이미 있습니다. "
+        "분 단위 시각 외의 숫자(골드량·포탑 수 등)는 쓰지 마세요. 수치가 아닌 의미를 설명하세요. 존댓말(~요, ~습니다), 친근하지만 과장 없는 어조. "
+        "마크다운, 이모지, 줄표는 직접 넣지 마세요. JSON 배열 원소마다 문장 하나만.\n"
+        "기록에 없는 장면을 지어내지 마세요. 사망 좌표의 라인/정글/강은 대략적인 지역입니다. "
+        "킬 관여자의 실제 위치, 혼자 있었는지, 시야 잡다 사망, 늦은 합류, 스킬 사용, "
+        "특정 한타에서의 딜·탱킹은 알 수 없습니다. 최종 딜량으로 후반 딜이나 특정 교전 딜을 설명하지 마세요. "
+        "집중력·진입 의도·교전 유도/주도는 확인할 수 없습니다. "
+        "위치가 필요하면 성장 추이의 관측 지역만 사용하고 어시스트 좌표로 선수 이동을 단정하지 마세요. "
+        "킬이 몰려도 한타/갱킹이라고 단정하지 마세요. "
+        "오브젝트 직전 사망과 오브젝트 손실은 시간적 관계만 확인되며 원인이라고 단정할 수 없습니다. "
+        "체력0으로 확인한 사망 대기만 사용하세요. 기록에 없는 부활 시간을 추정하지 마세요. "
+        "패배 경기를 승리처럼 평가하지 마세요. 결측 데이터에서는 최종 통계 범위로만 말하세요.\n\n"
+        + json.dumps(facts, ensure_ascii=False))
+    client = None
     try:
+        import re
         from google import genai
         from google.genai import types
-
-        client = genai.Client(api_key=api_key)  # 변수로 잡아둬야 호출 도중 연결이 닫히지 않는다
+        client = genai.Client(api_key=api_key)
         best, best_over = None, None
-        for _ in range(MAX_TRIES):  # 글자 수를 잘 못 지키니 길면 다시 받는다 (디스코드에서 한 줄로 보이게)
-            resp = client.models.generate_content(
-                model=model, contents=prompt,
-                config=types.GenerateContentConfig(response_mime_type="application/json", response_json_schema={
-                    "type": "object", "properties": {k: {"type": "string"} for k in keys}, "required": keys}))
-            result = {k: v.strip() for k, v in json.loads(resp.text).items() if isinstance(v, str)}
-            over = sum(max(len(result.get(k, "")) - MAX_LINE_CHARS, 0) for k in keys)
-            if best_over is None or over < best_over:
+        forbidden = [p.get("챔피언") for p in facts.get("선수", []) if p.get("챔피언")]
+        for _ in range(MAX_TRIES):
+            resp = client.models.generate_content(model=model, contents=prompt,
+                config=types.GenerateContentConfig(response_mime_type="application/json", response_json_schema=schema))
+            result = json.loads(resp.text)
+            if not isinstance(result, dict) or not isinstance(result.get("players"), dict):
+                raise ValueError("잘못된 AI 응답 구조")
+            strings = list(result.get("summary", [])) + list(result.get("next", []))
+            strings += [s for n in names for s in result["players"].get(n, [])]
+            if any(not isinstance(v, str) for v in strings):
+                raise ValueError("평가 문장이 문자열이 아님")
+            errors = []
+            if any(not result["players"].get(n) for n in names):
+                errors.append("친구 전원 평가를 빠짐없이 작성하세요.")
+            joined = " ".join(strings)
+            if any(c in joined for c in forbidden) or re.search(r"MVP|ACE|범인|KDA|\d+\s*/\s*\d+\s*/\s*\d+|\d+\s*(데스|번 죽|회 사망)", joined, re.I):
+                errors.append("챔피언 이름·KDA·데스 수·배지를 모두 빼세요.")
+            if re.search(r"(한|두|세|네|다섯|여섯|일곱|여덟|아홉|열)\s*(차례|번|회)\s*(사망|죽|데스)", joined):
+                errors.append("한글로 쓴 사망 횟수도 빼세요.")
+            if re.search(r"\d", re.sub(r"\d+분(?:\s*\d+초)?", "", joined)):
+                errors.append("분 단위 시각 외의 숫자를 모두 빼고 흐름의 의미를 설명하세요.")
+            over = sum(max(len(_plain(s)) - MAX_LINE_CHARS, 0) for s in result.get("summary", []))
+            over += sum(max(len(_plain(s)) - 42, 0) for n in names for s in result["players"].get(n, []))
+            over += sum(max(len(_plain(s)) - 48, 0) for s in result.get("next", []))
+            if not errors and (best_over is None or over < best_over):
                 best, best_over = result, over
-            if not over:
+            if not errors and not over:
                 break
+            prompt += "\n다시 작성하세요. " + " ".join(errors) + " 문장 길이 제한도 지키세요."
+        if best is None:
+            raise ValueError("누락 또는 금지 정보가 반복된 AI 평가")
         monitoring.observe("lol.gemini")
-        return {"summary": best.get("summary", ""), "lines": [best[n] for n in names if best.get(n)]}
+        return _format_evaluation(best, names)
     except Exception as exc:
         monitoring.error("lol.gemini", exc, "AI 경기 평가 실패 — 기본 리포트는 유지", "Gemini 키·할당량 확인")
         print(f"[lol] gemini evaluation failed: {exc}")
         return {}
+    finally:
+        if client is not None:
+            client.close()
