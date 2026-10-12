@@ -522,15 +522,31 @@ def build_report(match: dict[str, Any], timeline: dict[str, Any] | None, friends
     monsters = _monster_events(timeline, team_id)
     files = [("result.png", render_banner(won, queue, int(minutes), splash,
                                           side_info(f"우리 팀 · 친구 {len(mine)}명", team), side_info("상대 팀", enemy))),
-             ("players.png", render_players(columns, rows, splash)),
-             ("objectives.png", render_objectives(objectives, [(url, ours) for _, url, ours, dragon in monsters if dragon],
-                                                    splash))]
-    diffs = _gold_diffs(info, timeline, team_id) if timeline else []
-    if diffs:
-        events = [(minute, url, ours) for minute, url, ours, _ in monsters]
-        animated = render_gold_gif(diffs, events, splash)
-        files.append(("gold.gif", animated, "image/gif") if len(animated) <= GIF_MAX_BYTES
-                     else ("gold.png", render_gold(diffs, events, splash)))
+             ("players.png", render_players(columns, rows, splash))]
+    flow = None
+    if timeline and info["mapId"] == 11:
+        try:
+            # Lazy import: the renderer shares report styles and scoring helpers.
+            from imposter_finder.analysis.lol_flow import render
+            flow, _ = render(match, timeline, friend_ids, ddragon=ddragon)
+            if len(flow) > GIF_MAX_BYTES:
+                raise ValueError("경기 흐름 GIF 용량 초과")
+            monitoring.observe("lol.flow")
+        except Exception as exc:
+            flow = None
+            monitoring.error("lol.flow", exc, "경기 흐름 GIF 실패 — 기존 오브젝트·골드 카드는 유지")
+            print(f"[lol] flow rendering failed: {exc}")
+    if flow:
+        files.append(("flow.gif", flow, "image/gif"))
+    else:
+        files.append(("objectives.png", render_objectives(objectives,
+                         [(url, ours) for _, url, ours, dragon in monsters if dragon], splash)))
+        diffs = _gold_diffs(info, timeline, team_id) if timeline else []
+        if diffs:
+            events = [(minute, url, ours) for minute, url, ours, _ in monsters]
+            animated = render_gold_gif(diffs, events, splash)
+            files.append(("gold.gif", animated, "image/gif") if len(animated) <= GIF_MAX_BYTES
+                         else ("gold.png", render_gold(diffs, events, splash)))
 
     facts, evaluation_names = evaluation_facts(match, timeline, friends, ddragon)
     ai = _evaluate(facts, evaluation_names, gemini_api_key, gemini_model)
