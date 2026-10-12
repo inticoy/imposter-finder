@@ -195,7 +195,10 @@ class Path2D:
         return None
 
     def at(self, t: float) -> tuple[float, float] | None:
+        held = None  # 마지막 경로점 뒤(경기 끝 등)는 그 자리에 머문다
         for seg, tans in zip(self.segments, self.tangents):
+            if seg and seg[0][0] <= t and t > seg[-1][0]:
+                held = seg[-1][1:]
             if not seg or t < seg[0][0] or t > seg[-1][0]:
                 continue
             k = max(0, min(bisect_right([p[0] for p in seg], t) - 1, len(seg) - 2))
@@ -208,7 +211,7 @@ class Path2D:
             h00, h10, h01, h11 = 2 * u**3 - 3 * u**2 + 1, u**3 - 2 * u**2 + u, -2 * u**3 + 3 * u**2, u**3 - u**2
             return (h00 * x0 + h10 * dt * mx0 + h01 * x1 + h11 * dt * mx1,
                     h00 * y0 + h10 * dt * my0 + h01 * y1 + h11 * dt * my1)
-        return None
+        return held
 
 
 def build_paths(info: dict, timeline: dict) -> dict[int, Path2D]:

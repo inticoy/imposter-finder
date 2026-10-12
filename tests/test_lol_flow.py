@@ -3,7 +3,7 @@ import random
 import unittest
 from unittest.mock import Mock, patch
 from PIL import Image
-from imposter_finder.analysis.lol_flow import encode_bounded, schedule
+from imposter_finder.analysis.lol_flow import Path2D, encode_bounded, schedule
 from imposter_finder.analysis.lol_report import Friend, build_report
 
 
@@ -26,6 +26,12 @@ class FlowEncodingTests(unittest.TestCase):
             gif.seek(gif.n_frames - 1)
             self.assertEqual(gif.convert("RGB").getpixel((0, 0)), (29, 29, 29))
             self.assertEqual(gif.info["duration"], 3500)
+
+    def test_living_champion_stays_after_last_waypoint(self):
+        path = Path2D()
+        path.segments = [[(0, 100.0, 100.0), (60000, 900.0, 500.0)]]
+        path.build()
+        self.assertEqual(path.at(90000), (900.0, 500.0))
 
     def test_speed_changes_preserve_complete_match(self):
         for end in (34*60000, 70*60000):
