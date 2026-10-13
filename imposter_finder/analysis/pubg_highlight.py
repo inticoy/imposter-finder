@@ -29,7 +29,7 @@ W, H = 1000, 560  # 경로 GIF와 같은 크기
 FRAME_MS, LAST_MS = 80, 4500
 INTRO = 14  # 소개 장면 (카메라가 움직이는 유일한 구간)
 MIN_DIST = 230.0  # 지도 원본이 1m/px라 너무 다가가면 흐려진다 (가운데에서 1m ≈ 5.5px)
-EXAG = 1.3  # 높이 과장
+EXAG = 1.0  # 실제 높이 비율: 추정 지형의 경사를 과장하지 않는다
 HUMAN_Z = 0.9  # 텔레메트리 캐릭터 높이는 발보다 이만큼 위 (m)
 TEX = 1024  # 지형 판 텍스처 한 변 (px)
 FOG = (28, 30, 34)
@@ -1020,7 +1020,7 @@ def _best_yaw(terrain: Terrain, target, yaw: float, pitch: float, dist: float, p
                     count += 1
                     break
         return count
-    options = [yaw + d for d in (18, -18, 40, -40, 0, 198, 162)]
+    options = [yaw + d for d in (0, 15, -15, 30, -30)]
     return min(options, key=lambda y: (hidden(y), options.index(y)))
 
 
@@ -1079,7 +1079,7 @@ def render(match: dict[str, Any], telemetry: list[dict[str, Any]], names: dict[s
     if hl.shooter not in scene.actors:
         return None
     (cx, cy), half, yaw, key_pts = _framing(scene, hl)
-    pitch = 46.0
+    pitch = 58.0
     target = (cx, cy, sum(p[2] for p in key_pts) / len(key_pts) - HUMAN_Z)
     (tx, ty, _), first = _fit(target, yaw, pitch, key_pts)
     half = min(max(half, first * 0.85), 330)  # 소개 장면에서도 판 가장자리가 덜 보이게
@@ -1091,7 +1091,7 @@ def render(match: dict[str, Any], telemetry: list[dict[str, Any]], names: dict[s
     for i in range(INTRO):  # 멀리 높은 곳에서 돌아 들어오며 내려앉는다
         e = i / (INTRO - 1)
         e = e * e * (3 - 2 * e)
-        cam = Camera(target, yaw - 45 * (1 - e), pitch + 8 * (1 - e), dist * (1 + 0.4 * (1 - e)))
+        cam = Camera(target, yaw, pitch + 5 * (1 - e), dist * (1 + 0.16 * (1 - e)))
         base, depth = render_terrain(terrain, cam)
         img = painter.overlay(base, depth, cam, scene.start, {})
         painter.hud(img, scene.start, False)

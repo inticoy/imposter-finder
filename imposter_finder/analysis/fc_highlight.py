@@ -455,7 +455,7 @@ class Scene:
         return .75 * math.exp(-dt / .28) * math.cos(dt * 11) if 0 <= dt < 1.5 else 0.0
 
     # 선수: (이름, 팀, 발 위치(뛰면 z>0), 자세, 다이빙, 걸음 위상, 등번호)
-    def players(self, t: float) -> list[tuple]:
+    def _players(self, t: float) -> list[tuple]:
         S, flat, kind = self.S, self.flat, self.kind
         T_SHOT = self.T_SHOT
         contact = (S[0] - flat[0] * .45, S[1] - flat[1] * .45)
@@ -486,11 +486,12 @@ class Scene:
                 pose = "header" if 0 < jump < 1 else "run"
         else:
             b = self.ball(min(t, T_SHOT))
-            p = (b[0] - .6, b[1]) if t < T_SHOT else contact
+            p = (b[0] - flat[0]*.45, b[1] - flat[1]*.45) if t < T_SHOT else contact
             pose = "run"
-        if T_SHOT - .06 <= t < T_SHOT + .32 and kind != "header":
+        if T_SHOT - .16 <= t < T_SHOT + .32 and kind != "header":
             pose = "volley" if kind == "volley" else "kick"
-            p = contact
+            if t >= T_SHOT:
+                p = contact
         if t >= T_SHOT + .32:  # 카메라 반대쪽으로 달려가 세리머니 (화면 안에 남게)
             u = ease((t - T_SHOT - .32) / 1.6)
             begin = contact if kind != "header" else S
@@ -560,6 +561,86 @@ class Scene:
             out.append(("gk", "keeper", c, "dive", dive * (1 if ty > ky else -1), 0, 1))
         return out
 
+    def _prepare_motion(self) -> None:
+        """Fixed-rate root tracks make gait depend on metres travelled, not wall-clock time."""
+        if hasattr(self, '_motion'):
+            return
+        self._motion = {}
+        dt = 1 / 60
+        for i in range(math.ceil((self.END + .2) / dt) + 1):
+            t = i * dt
+            for row in self._players(t):
+                name, team, pos, pose, dive, _, number = row
+                records = self._motion.setdefault(name, [])
+                distance = records[-1][4] + math.dist(pos[:2], records[-1][1][:2]) if records else 0.0
+                records.append((t, pos, pose, dive, distance))
+        for rows in self._motion.values():
+            for i,row in enumerate(rows):
+                a,b=rows[max(0,i-2)],rows[min(len(rows)-1,i+2)]
+                speed=math.dist(a[1][:2],b[1][:2])/max(b[0]-a[0],.001)
+                if row[2]=='run' and speed<.12:
+                    rows[i]=(row[0],row[1],'stand',row[3],row[4])
+
+    def motion(self, name: str, t: float) -> tuple[float, float, tuple]:
+        self._prepare_motion()
+        rows = self._motion[name]
+        f = clamp(t * 60, 0, len(rows)-1)
+        i = min(int(f), len(rows)-2)
+        distance = rows[i][4] + (rows[i+1][4] - rows[i][4]) * (f-i)
+        # Look through short stand-stills instead of flipping toward the camera.
+        a, b = rows[max(0, i-2)], rows[min(len(rows)-1, i+2)]
+        velocity = sub(b[1][:2], a[1][:2])
+        speed = math.hypot(*velocity) / max(b[0]-a[0], .001)
+        if speed < .05:
+            for j in range(i, -1, -1):
+                if j and math.dist(rows[j][1][:2], rows[j-1][1][:2]) > .0001:
+                    velocity = sub(rows[j][1][:2], rows[j-1][1][:2])
+                    break
+        heading = norm(velocity) if math.hypot(*velocity) > .0001 else self.flat
+        if name == 'gk':
+            heading = (-1.0, 0.0)
+        if name.startswith('wall'):
+            heading = mul(self.flat, -1)
+        phase = distance / 1.8 * math.tau + sum(map(ord, name)) * .13
+        return phase, speed, heading
+
+    def facing(self, name: str, t: float, pose: str) -> tuple:
+        heading = self.motion(name, t)[2]
+        contact = self.T0 if name == 'passer' else self.T_SHOT
+        if pose in ('kick','volley','header') or contact-.22 <= t <= contact:
+            target = norm(sub(self.R, self.A)) if name == 'passer' and self.A is not None else self.flat
+            heading = norm(lerp(heading, target, ease((t-contact+.22)/.22)))
+        return heading
+
+    def action_phase(self, name: str, pose: str, t: float) -> float:
+        if pose in ('kick', 'volley'):
+            contact = self.T0 if name == 'passer' else self.T_SHOT
+            return clamp((t-contact+.16)/.48, 0, 1)
+        return self.motion(name, t)[0]
+
+    def players(self, t: float) -> list[tuple]:
+        out = []
+        for name, team, pos, pose, dive, _, number in self._players(t):
+            phase, speed, _ = self.motion(name, t)
+            if pose == 'run' and speed < .12:
+                pose = 'stand'
+            out.append((name, team, pos, pose, dive, self.action_phase(name, pose, t), number))
+        return out
+
+    def body(self, name: str, t: float, pose: str, phase: float) -> dict:
+        current = _pose(pose, phase)
+        rows = self._motion[name]
+        i = min(max(0, int(t*60)), len(rows)-1)
+        # Blend discrete stance changes over 160ms rather than popping limbs.
+        for j in range(i, max(0, i-11), -1):
+            if rows[j][2] != rows[j-1][2]:
+                u = ease((t-rows[j][0])/.16)
+                previous = _pose(rows[j-1][2], self.action_phase(name, rows[j-1][2], rows[j][0]))
+                return {k: [lerp(a,b,u) for a,b in zip(previous[k],current[k])] if k in ('feet','hands')
+                        else lerp(previous[k],current[k],u) if k=='hip'
+                        else previous[k]+(current[k]-previous[k])*u for k in current}
+        return current
+
     # 카메라
     def cam(self, t: float) -> Cam:
         S, G, flat = self.S, self.G, self.flat
@@ -616,19 +697,6 @@ def _team_kit(team: Team) -> dict:
 SKIN, HAIR, BOOT = (222, 178, 144), (44, 33, 26), (24, 24, 28)
 
 
-def _limb(d, P, a, b, w0, w1, color, k) -> None:
-    """가늘어지는 팔다리 (두 원 + 사다리꼴)."""
-    pa, pb = P(*a), P(*b)
-    dx, dy = pb[0] - pa[0], pb[1] - pa[1]
-    n = math.hypot(dx, dy) or 1
-    nx, ny = -dy / n, dx / n
-    ra, rb = w0 * k / 2, w1 * k / 2
-    d.polygon([(pa[0] + nx * ra, pa[1] + ny * ra), (pb[0] + nx * rb, pb[1] + ny * rb),
-               (pb[0] - nx * rb, pb[1] - ny * rb), (pa[0] - nx * ra, pa[1] - ny * ra)], fill=color)
-    for (x, y), r in ((pa, ra), (pb, rb)):
-        d.ellipse((x - r, y - r, x + r, y + r), fill=color)
-
-
 def _joint(a, b, length: float, forward: float) -> tuple:
     """두 마디 관절: a→b 사이가 짧으면 forward 쪽(+x면 앞)으로 굽힌다."""
     dx, dy = b[0] - a[0], b[1] - a[1]
@@ -646,14 +714,21 @@ def _pose(pose: str, phase: float) -> dict:
     """몸 기준 좌표 (m, 오른쪽이 앞, 위가 +). 발 두 개(뒤·앞), 손 두 개, 엉덩이, 어깨 기울기."""
     hip, lean = (0.0, 0.95), 0.0
     if pose == "run":
-        a, b = phase, phase + math.pi
-        feet = [(.38 * math.sin(x), .04 + .24 * max(0.0, -math.cos(x))) for x in (a, b)]
-        hands = [(-.3 * math.sin(x) + .06, 1.02 + .06 * abs(math.sin(x))) for x in (a, b)]
-        lean, hip = .1, (0.0, .93)
-    elif pose == "kick":
-        feet, hands, lean = [(-.08, .03), (.55, .5)], [(-.5, 1.3), (.38, 1.18)], -.06
-    elif pose == "volley":
-        feet, hands, lean = [(0.0, .03), (.6, .9)], [(-.55, 1.35), (.45, 1.25)], -.12
+        feet=[]
+        for angle in (phase,phase+math.pi):
+            u=(angle/math.tau)%1
+            if u<.5: feet.append((.45-1.8*u,.025))
+            else:
+                k=(u-.5)*2;feet.append((-.45+.9*ease(k),.025+.22*math.sin(math.pi*k)))
+        hands=[(-.24*math.sin(x),1.05+.04*abs(math.sin(x))) for x in (phase,phase+math.pi)]
+        lean,hip=.075,(0,.90+.018*math.cos(phase*2))
+    elif pose in ("kick","volley"):
+        u=clamp(phase,0,1);contact=1/3
+        back=(-.40,.09);hit=(.5,.16 if pose=='kick' else .78);follow=(.66,.55 if pose=='kick' else 1.02)
+        if u<contact: foot=lerp(back,hit,ease(u/contact))
+        elif u<.7: foot=lerp(hit,follow,ease((u-contact)/(.7-contact)))
+        else: foot=lerp(follow,(.12,.03),ease((u-.7)/.3))
+        feet,hands,lean=[(-.08,.025),foot],[(-.37,1.23),(.32,1.18)],-.04
     elif pose == "header":
         feet, hands, lean = [(-.18, .3), (.12, .18)], [(-.42, 1.45), (.4, 1.42)], .12
     elif pose == "celebrate":
@@ -672,69 +747,85 @@ def _pose(pose: str, phase: float) -> dict:
 
 
 def _figure(d: ImageDraw.ImageDraw, cam: Cam, anchor, kit: dict, pose: str, phase: float, facing: int,
-            dive: float = 0.0, number: int | None = None) -> None:
-    """선수 한 명 (화면을 향한 판). anchor: 발 (다이빙이면 몸 가운데). facing: 화면에서 달리는 쪽 ±1."""
-    p, z = cam.proj(anchor)
-    if p is None:
+            dive: float = 0.0, number: int | None = None, heading: tuple | None = None, body: dict | None = None) -> None:
+    """Articulated world-space player: limbs and shirt rotate with the runner, never billboard-flip."""
+    projected, depth = cam.proj(anchor)
+    if projected is None or depth < 3.5 or cam.f/depth*1.8 < 6:
         return
-    k = cam.f / z  # m당 픽셀
-    if k * 1.8 < 6 or z < 3.5:  # 너무 멀거나 카메라 바로 앞이면 (화면을 가리니) 그리지 않는다
-        return
-    pivot = (0.0, .95) if pose == "dive" else (0.0, 0.0)
-    ang = 0.0
-    if pose == "dive":  # 몸을 옆으로 눕힌다
-        q, _ = cam.proj(add(anchor, (0, 1 if dive > 0 else -1, 0)))
-        sx = (q[0] - p[0]) if q else -1
-        ang = -math.copysign(1, sx) * math.radians(78) * abs(dive)
-    ca, sa = math.cos(ang), math.sin(ang)
+    forward = norm(heading or (float(facing), 0.0))
+    right = (-forward[1], forward[0])
+    body = body or _pose(pose, phase)
+    hip, lean = body['hip'], body['lean']
+    meshes = []
+    light = norm((-.4, -.5, 1.0))
 
-    def P(lx, ly):
-        lx, ly = lx * facing - pivot[0], ly - pivot[1]
-        rx, ry = lx * ca - ly * sa, lx * sa + ly * ca
-        return (p[0] + rx * k, p[1] - ry * k)
+    def point(x, z, side=0.0):
+        if pose == 'dive':
+            # Rotate around the body centre along the actual dive direction.
+            theta = math.radians(78)*abs(dive)
+            sign=-1 if dive<0 else 1
+            side,z=side*math.cos(theta)+(z-.95)*math.sin(theta)*sign,(z-.95)*math.cos(theta)-side*math.sin(theta)*sign
+        return (anchor[0]+forward[0]*x+right[0]*side, anchor[1]+forward[1]*x+right[1]*side, anchor[2]+z)
 
-    body = _pose(pose, phase)
-    hip, lean = body["hip"], body["lean"]
-    sh_y = hip[1] + .52
-    shoulders = [(-.2 + lean, sh_y), (.2 + lean, sh_y)]
-    knees = [_joint(hip, f, .96, 1) for f in body["feet"]]
-    elbows = [_joint(s, h, .58, -1) for s, h in zip(shoulders, body["hands"])]
+    def face(poly, color):
+        screens = [cam.proj(p)[0] for p in poly]
+        if any(p is None for p in screens):
+            return
+        normal = norm(cross(sub(poly[1],poly[0]),sub(poly[2],poly[0])))
+        lighting = .68+.32*max(0,dot(normal,light))
+        meshes.append((sum(cam.to_cam(p)[2] for p in poly)/len(poly),screens,_shade(color,lighting)))
 
-    def leg(n, dim):
-        f, kn = body["feet"][n], knees[n]
-        _limb(d, P, hip, kn, .18, .14, _shade(SKIN, dim), k)
-        _limb(d, P, kn, f, .13, .1, _shade(kit["socks"], dim), k)
-        _limb(d, P, f, (f[0] + .13, f[1] - .01), .1, .09, BOOT, k)
+    def bone(a,b,r0,r1,color):
+        axis = norm(sub(b,a));side = norm(cross(axis,(0,0,1)))
+        if math.hypot(*side[:2]) < .01:
+            side = (1,0,0)
+        other = norm(cross(axis,side))
+        rings=[]
+        for center,radius in ((a,r0),(b,r1)):
+            rings.append([add(center,add(mul(side,math.cos(i*math.tau/8)*radius),mul(other,math.sin(i*math.tau/8)*radius))) for i in range(8)])
+        for i in range(8):
+            j=(i+1)%8;face([rings[0][i],rings[0][j],rings[1][j],rings[1][i]],color)
+        face(rings[0][::-1],color);face(rings[1],color)
 
-    def arm(n, dim):
-        s, e, h = shoulders[n], elbows[n], body["hands"][n]
-        _limb(d, P, s, e, .13, .11, _shade(kit["shirt"], dim), k)
-        _limb(d, P, e, h, .1, .085, _shade(SKIN, dim), k)
+    def box(x,z,front,width,height,color,side=0):
+        corners=[point(x+dx,z+dz,sy+side) for dz in (-height/2,height/2) for sy in (-width/2,width/2) for dx in (-front/2,front/2)]
+        for indices in ((0,1,3,2),(4,6,7,5),(0,4,5,1),(2,3,7,6),(0,2,6,4),(1,5,7,3)):
+            face([corners[i] for i in indices],color)
 
-    leg(0, .8)
-    arm(0, .8)
-    leg(1, 1.0)
-    # 반바지 · 상의 (빛은 화면 왼쪽 위에서: 오른쪽 절반이 어둡다)
-    hx, hy = hip
-    d.polygon([P(hx - .2, hy + .06), P(hx + .2, hy + .06), P(hx + .23, hy - .2), P(hx + .02, hy - .17),
-               P(hx - .02, hy - .17), P(hx - .23, hy - .2)], fill=kit["shorts"])
-    torso = [P(hx - .18, hy + .03), P(hx + .18, hy + .03), P(.24 + lean, sh_y + .02), P(-.24 + lean, sh_y + .02)]
-    d.polygon(torso, fill=kit["shirt"])
-    mid_lo, mid_hi = P(hx + .03, hy + .03), P(.03 + lean, sh_y + .02)
-    right = [mid_lo, torso[1], torso[2], mid_hi] if facing > 0 else [mid_lo, torso[0], torso[3], mid_hi]
-    d.polygon(right, fill=kit["shade"])
-    if number is not None and k > 34:
-        c = P(lean / 2, (hy + sh_y) / 2 + .02)
-        d.text(c, str(number), font=font(max(8, round(k * .24)), 6), fill=kit["ink"], anchor="mm")
-    arm(1, 1.0)
-    # 목 · 머리 · 머리카락
-    neck, head = P(lean, sh_y + .06), P(lean + .03, sh_y + .2)
-    r = .115 * k
-    d.ellipse((neck[0] - r * .5, neck[1] - r * .5, neck[0] + r * .5, neck[1] + r * .5), fill=_shade(SKIN, .85))
-    d.ellipse((head[0] - r, head[1] - r, head[0] + r, head[1] + r), fill=SKIN)
-    hair = P(lean + .015, sh_y + .245)
-    d.chord((hair[0] - r * 1.02, hair[1] - r, hair[0] + r * 1.02, hair[1] + r * .95), 180 + math.degrees(-ang),
-            360 + math.degrees(-ang), fill=HAIR)
+    shoulder_z=hip[1]+.48
+    for i,side in enumerate((-.13,.13)):
+        foot=body['feet'][i];knee=_joint(hip,foot,1.02,1)
+        h=point(*hip,side);k=point(*knee,side);f=point(*foot,side)
+        bone(h,k,.085,.067,SKIN)
+        # Socks begin below the knee; thighs remain skin and shorts cover the root.
+        bone(k,f,.066,.045,kit['socks'])
+        box(foot[0]+.05,foot[1]+.018,.23,.12,.09,BOOT,side)
+        hand=body['hands'][i];shoulder=(lean,shoulder_z);elbow=_joint(shoulder,hand,.60,-1)
+        s=point(*shoulder,side*1.7);e=point(*elbow,side*1.85);w=point(*hand,side*2)
+        bone(s,lerp(s,e,.5),.072,.064,kit['shirt'])
+        bone(lerp(s,e,.5),e,.063,.052,SKIN);bone(e,w,.052,.036,SKIN)
+    box(hip[0],hip[1]-.08,.28,.36,.25,kit['shorts'])
+    box(lean*.5,hip[1]+.23,.25,.43,.47,kit['shirt'])
+    bone(point(lean,shoulder_z+.01),point(lean,shoulder_z+.13),.065,.061,SKIN)
+    # Small faceted ellipsoid: shaded head volume and a hair cap.
+    center=point(lean+.01,shoulder_z+.24)
+    rows=[]
+    for lat in range(6):
+        angle=-math.pi/2+lat*math.pi/5
+        rows.append([add(center,(math.cos(lon*math.tau/8)*math.cos(angle)*.115,
+                                 math.sin(lon*math.tau/8)*math.cos(angle)*.115,math.sin(angle)*.145)) for lon in range(8)])
+    for lat in range(5):
+        for lon in range(8):
+            nxt=(lon+1)%8
+            face([rows[lat][lon],rows[lat][nxt],rows[lat+1][nxt],rows[lat+1][lon]],HAIR if lat>=3 else SKIN)
+    for _,poly,color in sorted(meshes,key=lambda item:-item[0]):
+        d.polygon(poly,fill=color)
+    # Number follows the shirt's back face rather than floating on the viewer-facing plane.
+    back=point(-.14,hip[1]+.25)
+    if number is not None and dot((forward[0],forward[1],0),cam.fw)>.25:
+        pos,z=cam.proj(back)
+        if pos and cam.f/z>34:
+            d.text(pos,str(number),font=font(max(8,round(cam.f/z*.22)),6),fill=kit['ink'],anchor='mm')
 
 
 def _shadow(d: ImageDraw.ImageDraw, cam: Cam, pos, size: float = .38, alpha: int = 80, long: bool = True) -> None:
@@ -876,8 +967,9 @@ class Renderer:
                 gp, _ = cam.proj((105, 34, 0))
                 facing = 1 if not (gp and sp) or gp[0] >= sp[0] else -1
             items.append((cam.to_cam(center)[2],
-                          lambda pos=pos, team=team, pose=pose, phase=phase, dive=dive, number=number, facing=facing:
-                          _figure(d, cam, pos, self.kits[team], pose, phase, facing, dive, number)))
+                          lambda pos=pos, team=team, pose=pose, phase=phase, dive=dive, number=number, facing=facing, name=name:
+                          _figure(d, cam, pos, self.kits[team], pose, phase, facing, dive, number,
+                                  sc.facing(name,t,pose),sc.body(name,t,pose,phase))))
         items.append((cam.to_cam(ball)[2], lambda: self._ball(im, cam, t, frame_dt)))
         for _, fn in sorted(items, key=lambda it: -it[0]):
             fn()

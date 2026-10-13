@@ -538,7 +538,8 @@ def build_tracks(info: dict, timeline: dict, t0: float, t1: float, center: tuple
                     soft[pid].append((t, p[0] + (src[0] - p[0]) * k, p[1] + (src[1] - p[1]) * k))
         elif kind in {"ITEM_PURCHASED", "ITEM_SOLD"} and e.get("participantId") in ps:
             pid = e["participantId"]
-            if not paths[pid].dead_at(t) and t > 5000:
+            if not paths[pid].dead_at(t) and t > 5000 and ps[pid]["championName"] != "Ornn":
+                # Ornn forges away from the fountain; purchases are not position observations.
                 soft[pid].append((t, *FOUNTAIN[ps[pid]["teamId"]]))
 
     tracks = {}
