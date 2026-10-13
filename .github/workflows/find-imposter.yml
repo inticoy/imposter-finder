@@ -24,9 +24,10 @@ jobs:
       MONITOR_SERVICE: imposter-finder
       HEALTHCHECK_URL: ${{ secrets.HEALTHCHECK_URL }}
       MONITOR_ENABLED_GAMES: pubg,fc,lol # TFT intentionally disabled until key approval
-      # 상태 DB 백업 (Cloudflare R2). 시크릿이 없으면 백업 단계는 건너뛴다
-      R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
-      R2_BUCKET: imposter-finder-state
+      # 경기 기록 백업 (Cloudflare D1). 토큰 시크릿이 없으면 백업 단계는 건너뛴다
+      D1_API_TOKEN: ${{ secrets.D1_API_TOKEN }}
+      D1_ACCOUNT_ID: a51470d420404dcfb05995ed38876e83
+      D1_DATABASE_ID: dc26c4a5-c7ad-4a97-bd2b-5988392379e4
     steps:
       - uses: actions/checkout@v7
 
@@ -48,24 +49,10 @@ jobs:
           key: state-${{ github.run_id }}
           restore-keys: state-
 
-      # 캐시가 지워졌으면 R2 백업에서 이어 받는다. 넥슨·라이엇은 30일치만 다시 주니 통산 기록을 지킨다
-      - name: Restore state from R2
-        if: env.R2_ENDPOINT != ''
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: auto
-          AWS_REQUEST_CHECKSUM_CALCULATION: WHEN_REQUIRED
-          AWS_RESPONSE_CHECKSUM_VALIDATION: WHEN_REQUIRED
-        run: |
-          if [ -f data/imposter_finder.db ]; then exit 0; fi
-          mkdir -p data
-          if aws s3api head-object --bucket "$R2_BUCKET" --key state/latest.db --endpoint-url "$R2_ENDPOINT" >/dev/null 2>&1; then
-            aws s3 cp "s3://$R2_BUCKET/state/latest.db" data/imposter_finder.db --endpoint-url "$R2_ENDPOINT"
-            echo "R2 백업에서 상태 복원"
-          else
-            echo "R2 백업 없음 — 새로 시작"
-          fi
+      # 캐시가 지워졌으면 D1 백업에서 이어 받는다. 넥슨·라이엇은 최근 기록만 다시 주니 통산 기록을 지킨다
+      - name: Restore state from D1
+        if: env.D1_API_TOKEN != '' && hashFiles('data/imposter_finder.db') == ''
+        run: python -m imposter_finder.backup pull
 
       # 이미지 캐시는 거의 그대로라 내용이 바뀔 때만 저장한다
       - name: Restore image cache
@@ -99,33 +86,10 @@ jobs:
             data/fc_meta
           key: state-${{ github.run_id }}
 
-      # latest.db는 매번 덮어쓰고, 하루 하나씩 날짜별 사본을 남긴다 (2MB대라 1년에 1GB 미만).
-      # 복원에 실패해 빈 DB로 돌았을 때 좋은 백업을 덮어쓰지 않게, 크게 작아진 DB는 latest에 올리지 않는다
-      - name: Back up state to R2
-        if: always() && env.R2_ENDPOINT != '' && hashFiles('data/imposter_finder.db') != ''
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: auto
-          AWS_REQUEST_CHECKSUM_CALCULATION: WHEN_REQUIRED
-          AWS_RESPONSE_CHECKSUM_VALIDATION: WHEN_REQUIRED
-        run: |
-          python - <<'PY'
-          import sqlite3
-          src, dst = sqlite3.connect("data/imposter_finder.db"), sqlite3.connect("/tmp/state.db")
-          src.backup(dst)  # WAL까지 반영된 일관된 사본
-          dst.close(); src.close()
-          PY
-          local=$(stat -c %s /tmp/state.db)
-          remote=$(aws s3api head-object --bucket "$R2_BUCKET" --key state/latest.db --endpoint-url "$R2_ENDPOINT" \
-            --query ContentLength --output text 2>/dev/null || echo 0)
-          if [ "$remote" != "0" ] && [ "$local" -lt $(( remote * 8 / 10 )) ]; then
-            aws s3 cp /tmp/state.db "s3://$R2_BUCKET/state/suspect/${{ github.run_id }}.db" --endpoint-url "$R2_ENDPOINT"
-            echo "::warning::DB가 백업보다 크게 작다 ($local < $remote bytes) — latest를 덮어쓰지 않음"
-            exit 0
-          fi
-          aws s3 cp /tmp/state.db "s3://$R2_BUCKET/state/latest.db" --endpoint-url "$R2_ENDPOINT"
-          aws s3 cp /tmp/state.db "s3://$R2_BUCKET/state/daily/$(TZ=Asia/Seoul date +%F).db" --endpoint-url "$R2_ENDPOINT"
+      # 로컬에만 있는 행을 D1에 더한다 (지우지 않아 빈 DB로 돌아도 백업은 안전하다)
+      - name: Back up records to D1
+        if: always() && env.D1_API_TOKEN != '' && hashFiles('data/imposter_finder.db') != ''
+        run: python -m imposter_finder.backup push
 
       - name: Save image cache
         if: always() && hashFiles('data/assets/**') != '' && steps.assets.outputs.cache-matched-key != format('assets-{0}', hashFiles('data/assets/**'))

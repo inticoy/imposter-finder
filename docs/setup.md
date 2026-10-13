@@ -104,15 +104,14 @@ gh workflow run find-imposter.yml                   # 지금 한 번 실행
 gh cache list                                        # 상태·이미지 캐시
 ```
 
-## 상태 백업 (Cloudflare R2)
+## 기록 백업 (Cloudflare D1)
 
-상태 DB(배그·롤·TFT·FC 경기 기록, 알림 처리 내역)는 Actions 캐시에만 있으면 캐시가 지워질 때 통산 기록이 사라집니다. 넥슨·라이엇은 30일치만 다시 주므로 R2에 백업합니다.
+상태 DB(배그·롤·TFT·FC 경기 기록, 알림 처리 내역)는 Actions 캐시에만 있으면 캐시가 지워질 때 통산 기록이 사라집니다. 넥슨(FC 30일)·라이엇·PUBG는 최근 기록만 다시 주므로 D1 `imposter-finder`에 같은 표 구조로 백업합니다. 기록만 있으면 이미지·메시지는 다시 만들 수 있습니다.
 
-- 매 실행 뒤 `imposter-finder-state` 버킷의 `state/latest.db`를 덮어쓰고, `state/daily/YYYY-MM-DD.db`(KST)를 하루 하나 남깁니다.
-- 실행 시작에 캐시가 없으면 `latest.db`에서 복원합니다.
-- 새 DB가 백업보다 20% 넘게 작으면(복원 실패로 빈 DB가 된 경우) `latest`를 덮지 않고 `state/suspect/{run_id}.db`에 올린 뒤 경고만 남깁니다.
-- 시크릿: `R2_ENDPOINT`(`https://<account_id>.r2.cloudflarestorage.com`), `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`. 없으면 백업 단계는 건너뜁니다.
-- 키는 대시보드 R2 → API 토큰 관리에서 이 버킷만 Object Read & Write로 만듭니다.
+- 매 실행 뒤 `python -m imposter_finder.backup push`: 로컬에만 있는 행을 넣고, `updated_at`이 있는 작은 표와 `api_usage`는 덮어씁니다. 지우지 않으므로 빈 DB로 돌아도 백업이 망가지지 않습니다.
+- 실행 시작에 캐시가 없으면 `pull`로 D1의 모든 행을 받아 이어 갑니다.
+- 시크릿 `D1_API_TOKEN`: D1 Edit 권한 토큰. 계정·DB ID는 워크플로에 있습니다. 토큰이 없으면 백업 단계는 건너뜁니다.
+- PUBG 텔레메트리와 롤 타임라인은 저장하지 않아(경기 상세만) 오래된 경기의 경로·흐름 GIF는 다시 만들 수 없습니다.
 
 ## README 예시 이미지
 
