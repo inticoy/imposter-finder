@@ -104,6 +104,16 @@ gh workflow run find-imposter.yml                   # 지금 한 번 실행
 gh cache list                                        # 상태·이미지 캐시
 ```
 
+## 상태 백업 (Cloudflare R2)
+
+상태 DB(배그·롤·TFT·FC 경기 기록, 알림 처리 내역)는 Actions 캐시에만 있으면 캐시가 지워질 때 통산 기록이 사라집니다. 넥슨·라이엇은 30일치만 다시 주므로 R2에 백업합니다.
+
+- 매 실행 뒤 `imposter-finder-state` 버킷의 `state/latest.db`를 덮어쓰고, `state/daily/YYYY-MM-DD.db`(KST)를 하루 하나 남깁니다.
+- 실행 시작에 캐시가 없으면 `latest.db`에서 복원합니다.
+- 새 DB가 백업보다 20% 넘게 작으면(복원 실패로 빈 DB가 된 경우) `latest`를 덮지 않고 `state/suspect/{run_id}.db`에 올린 뒤 경고만 남깁니다.
+- 시크릿: `R2_ENDPOINT`(`https://<account_id>.r2.cloudflarestorage.com`), `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`. 없으면 백업 단계는 건너뜁니다.
+- 키는 대시보드 R2 → API 토큰 관리에서 이 버킷만 Object Read & Write로 만듭니다.
+
 ## README 예시 이미지
 
 실제 경기로 리포트를 만들되 이름·닉네임을 가명으로 바꾸고, 디스코드에 올라온 모습(봇 이름·멘션·색 띠 카드·총평/평가·버튼)으로 합성해 `docs/images/report-{pubg,lol,fc}`에 저장합니다. 리포트 원본은 `data/samples/`(커밋 안 함)에 남습니다.
