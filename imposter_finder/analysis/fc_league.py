@@ -17,7 +17,7 @@ from imposter_finder.analysis.fc_report import BG, LABEL, TRACK, WHITE, Friend, 
 from imposter_finder.analysis.fc_xg import team_xg
 
 LEAGUE_EVERY = 10  # 친구전 이만큼 쌓이면 리그 리포트
-ELO_START, ELO_K = 1500, 30
+ELO_START, ELO_K = 1500, 16  # 같은 상대와 자주 붙어 K가 크면 몇 경기에 순위가 뒤집힌다 (30이면 20경기에 ±150)
 STYLE_MIN_GAMES = 5  # 플레이 스타일은 이 경기 수 이상만 (적으면 들쭉날쭉)
 UP, DOWN, SAME = (62, 207, 142), (239, 91, 91), (120, 126, 138)
 ATTACK, BUILD, RESULT = (240, 96, 84), (240, 180, 41), (225, 229, 236)
@@ -65,6 +65,7 @@ class Row:
     ga: int = 0
     xgf: float = 0.0
     xga: float = 0.0
+    total: list[int] = field(default_factory=lambda: [0, 0, 0, 0, 0])  # 통산 승·무·패·득·실
 
     @property
     def games(self) -> int:
@@ -95,6 +96,14 @@ def standings(history: list[dict[str, Any]], window: list[dict[str, Any]], frien
             row.w, row.d, row.l = row.w + (gf > ga), row.d + (gf == ga), row.l + (gf < ga)
             row.gf, row.ga = row.gf + gf, row.ga + ga
             row.xgf, row.xga = row.xgf + team_xg(me), row.xga + team_xg(op)
+    for match in history:  # 통산
+        if not _played(match):
+            continue
+        for me, op in (match["matchInfo"], match["matchInfo"][::-1]):
+            if me["ouid"] in rows:
+                gf, ga = goals(me), goals(op)
+                t = rows[me["ouid"]].total
+                t[0], t[1], t[2], t[3], t[4] = t[0] + (gf > ga), t[1] + (gf == ga), t[2] + (gf < ga), t[3] + gf, t[4] + ga
     previous = sorted((o for o in rows if o in before), key=lambda o: -before[o])
     ordered = sorted(rows.values(), key=lambda r: -r.elo)
     for n, row in enumerate(ordered, 1):
@@ -148,14 +157,20 @@ def _canvas(height: int) -> tuple[Image.Image, ImageDraw.ImageDraw]:
 
 
 def render_table(rows: list[Row], games: int) -> bytes:
+    """순위 · Elo | 이번 구간 승무패·득실·xG 득실 | 통산 경기·승무패·승률·득실."""
     row_h = 58
     height = 128 + row_h * len(rows) + 16
     img, dr = _canvas(height)
-    header(dr, f"친구 리그 · 최근 {games}경기", [])
-    cols = [("순위", PAD + 8, "la"), ("감독", PAD + 92, "la"), ("Elo", 470, "ra"), ("경기", 540, "ra"),
-            ("승 무 패", 650, "ra"), ("득실", 740, "ra"), ("xG 득실", 850, "ra"), ("승점/경기", WIDTH - PAD, "ra")]
+    header(dr, "친구 리그", [])
+    groups = [(f"최근 {games}경기", 420, 640), ("통산", 668, WIDTH - PAD)]
+    for label, x0, x1 in groups:
+        dr.text(((x0 + x1) / 2, 64), label, font=font(14, 6), fill=WHITE, anchor="mm")
+        dr.line((x0, 76, x1, 76), fill=TRACK, width=1)
+    cols = [("순위", PAD + 8, "la"), ("감독", PAD + 84, "la"), ("Elo", 380, "ra"),
+            ("승 무 패", 500, "ra"), ("득실", 568, "ra"), ("xG 득실", 640, "ra"),
+            ("경기", 712, "ra"), ("승 무 패", 812, "ra"), ("승률", 890, "ra"), ("득실", WIDTH - PAD, "ra")]
     for label, x, anchor in cols:
-        dr.text((x, 84), label, font=font(14), fill=LABEL, anchor=anchor)
+        dr.text((x, 90), label, font=font(14), fill=LABEL, anchor=anchor)
     for n, row in enumerate(rows):
         y = 112 + n * row_h
         if n % 2 == 0:
@@ -164,24 +179,26 @@ def render_table(rows: list[Row], games: int) -> bytes:
         dr.text((PAD + 8, cy), str(row.rank), font=font(24, 6), fill=WHITE, anchor="lm")
         if row.prev_rank is not None and row.prev_rank != row.rank:
             up = row.prev_rank > row.rank
-            ax, sign = PAD + 44, -1 if up else 1
+            ax, sign = PAD + 40, -1 if up else 1
             dr.polygon([(ax, cy + 6 * sign), (ax - 6, cy - 4 * sign), (ax + 6, cy - 4 * sign)], fill=UP if up else DOWN)
             dr.text((ax + 10, cy), str(abs(row.prev_rank - row.rank)), font=font(13, 6), fill=UP if up else DOWN,
                     anchor="lm")
-        dr.text((PAD + 92, cy), row.name, font=font(22, 6), fill=WHITE, anchor="lm")
-        dr.text((470, cy - 8), f"{row.elo:.0f}", font=font(22, 6), fill=WHITE, anchor="ra")
+        dr.text((PAD + 84, cy), row.name, font=font(22, 6), fill=WHITE, anchor="lm")
+        dr.text((380, cy - 8), f"{row.elo:.0f}", font=font(22, 6), fill=WHITE, anchor="ra")
         delta = round(row.delta)
-        dr.text((470, cy + 12), f"{delta:+d}" if delta else "±0", font=font(13, 6),
+        dr.text((380, cy + 12), f"{delta:+d}" if delta else "±0", font=font(13, 6),
                 fill=UP if delta > 0 else DOWN if delta < 0 else SAME, anchor="ra")
-        muted = row.games == 0
-        dr.text((540, cy), str(row.games), font=font(20, 6), fill=LABEL if muted else WHITE, anchor="rm")
-        dr.text((650, cy), f"{row.w} {row.d} {row.l}", font=font(20, 6), fill=LABEL if muted else WHITE, anchor="rm")
-        dr.text((740, cy), f"{row.gf - row.ga:+d}" if row.games else "-", font=font(20, 6),
-                fill=LABEL if muted else WHITE, anchor="rm")
-        dr.text((850, cy), f"{row.xgf - row.xga:+.1f}" if row.games else "-", font=font(20, 6),
-                fill=LABEL if muted else WHITE, anchor="rm")
-        dr.text((WIDTH - PAD, cy), f"{row.ppg:.1f}" if row.games else "-", font=font(20, 6),
-                fill=LABEL if muted else WHITE, anchor="rm")
+        recent = WHITE if row.games else LABEL
+        cell = lambda x, text, color: dr.text((x, cy), text, font=font(20, 6), fill=color, anchor="rm")
+        cell(500, f"{row.w} {row.d} {row.l}" if row.games else "-", recent)
+        cell(568, f"{row.gf - row.ga:+d}" if row.games else "-", recent)
+        cell(640, f"{row.xgf - row.xga:+.1f}" if row.games else "-", recent)
+        w, d, l, gf, ga = row.total
+        played = w + d + l
+        cell(712, str(played), WHITE)
+        cell(812, f"{w} {d} {l}", WHITE)
+        cell(890, f"{w / played * 100:.0f}%" if played else "-", WHITE)
+        cell(WIDTH - PAD, f"{gf - ga:+d}" if played else "-", WHITE)
     return png(img)
 
 
@@ -215,7 +232,7 @@ def render_styles(people: list[tuple[str, dict[str, float]]], scale: list[tuple[
     rows_n = math.ceil(len(people) / cols)
     height = 76 + rows_n * 300 + 40
     img, dr = _canvas(height)
-    header(dr, "플레이 스타일", [(ATTACK, "공격"), (BUILD, "빌드업·수비"), (RESULT, "스타일·결과")])
+    header(dr, "플레이 스타일 · 통산", [(ATTACK, "공격"), (BUILD, "빌드업·수비"), (RESULT, "스타일·결과")])
     for i, (name, totals) in enumerate(people):
         cx = PAD + cell * (i % cols + 0.5)
         cy = 76 + (i // cols) * 300 + 160
