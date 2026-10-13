@@ -9,7 +9,7 @@ import time
 
 from imposter_finder.analysis.lol_report import ACCENT_LOSE, ACCENT_WIN, Friend, build_report
 from imposter_finder.config import Settings
-from imposter_finder.discord import DiscordClient
+from imposter_finder.discord import DiscordClient, with_highlight
 from imposter_finder.games.lol import DDragon, RiotApiError, RiotClient
 from imposter_finder.registry import load_lol_accounts
 from imposter_finder.storage import LocalStore
@@ -76,27 +76,23 @@ def run_lol_cycle(settings: Settings, store: LocalStore, notify: bool) -> dict[s
                 monitoring.error("lol.timeline", exc, "롤 타임라인 조회 실패")
                 print(f"[lol] timeline failed {match_id}: {exc}")
         payload, files = build_report(match, timeline, friends, _ddragon, settings.gemini_api_key, settings.gemini_model)
+        payload, files = with_highlight(payload, files, _highlight(match, timeline, friends))
         for thread_id in settings.discord_lol_thread_ids:
             discord.send_with_files(thread_id, payload, files)
         store.mark_notification_done(PLATFORM, match_id, "sent")
         published += 1
-        _send_highlight(settings, discord, match, timeline, friends)
     return {"group_matches": len(group_ids), "published": published}
 
 
-def _send_highlight(settings: Settings, discord: DiscordClient, match: dict, timeline: dict | None,
-                    friends: dict[str, Friend]) -> None:
-    """친구 최고 교전 GIF를 리포트 바로 뒤에 따로 보낸다 (리포트와 합치면 디스코드 첨부 한도를 넘는다).
-    실패해도 리포트는 이미 갔으니 기록만 남긴다."""
+def _highlight(match: dict, timeline: dict | None, friends: dict[str, Friend]) -> tuple[dict, list[tuple]] | None:
+    """친구 최고 교전 GIF (리포트의 마지막 이미지, 파일당 10MiB 안). 실패하면 빼고 리포트만 보낸다."""
     try:
         from imposter_finder.analysis.lol_highlight import build_highlight  # 지형 그림을 쓸 때만 불러온다
         won = any(p["win"] for p in match["info"]["participants"] if p["puuid"] in friends)
         highlight = build_highlight(match, timeline, friends, _ddragon, ACCENT_WIN if won else ACCENT_LOSE)
-        if highlight is None:
-            return
-        for thread_id in settings.discord_lol_thread_ids:
-            discord.send_with_files(thread_id, *highlight)
         monitoring.observe("lol.highlight")
+        return highlight
     except Exception as exc:
-        monitoring.error("lol.highlight", exc, "하이라이트 GIF 실패 — 리포트는 보냄")
+        monitoring.error("lol.highlight", exc, "하이라이트 GIF 실패 — 리포트는 하이라이트 없이 전송")
         print(f"[lol] highlight failed {match['metadata']['matchId']}: {exc}")
+        return None

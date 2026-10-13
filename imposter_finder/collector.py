@@ -5,7 +5,7 @@ from typing import Any
 
 from imposter_finder.analysis.pubg_report import build_highlight, build_report
 from imposter_finder.config import Settings
-from imposter_finder.discord import DiscordClient
+from imposter_finder.discord import DiscordClient, with_highlight
 from imposter_finder.games.pubg import PubgClient
 from imposter_finder.registry import PubgPlayer, load_pubg_players
 from imposter_finder.storage import LocalStore
@@ -68,23 +68,21 @@ def _send_image_report(settings: Settings, platform: str, match: dict[str, Any],
                        registered: list[PubgPlayer]) -> None:
     """경기 분석 이미지(결과·스쿼드·경로·교전 흐름·무기) + 총평/평가."""
     payload, files = build_report(platform, match, telemetry, registered, settings.gemini_api_key, settings.gemini_model)
+    payload, files = with_highlight(payload, files, _highlight(platform, match, telemetry, registered))
     discord = DiscordClient(settings.discord_bot_token or "")
     for thread_id in settings.discord_pubg_thread_ids:
         discord.send_with_files(thread_id, payload, files)
-    _send_highlight(settings, discord, platform, match, telemetry, registered)
 
 
-def _send_highlight(settings: Settings, discord: DiscordClient, platform: str, match: dict[str, Any],
-                    telemetry: list[dict[str, Any]], registered: list[PubgPlayer]) -> None:
-    """베스트 킬 3D GIF는 따로 한 번 더 (본 메시지 용량 한도와 별개). 실패해도 본 리포트는 이미 보냈다."""
+def _highlight(platform: str, match: dict[str, Any], telemetry: list[dict[str, Any]],
+               registered: list[PubgPlayer]) -> tuple[dict, list[tuple]] | None:
+    """베스트 킬 3D GIF (리포트의 마지막 이미지). 실패하면 빼고 리포트만 보낸다."""
     try:
-        highlight = build_highlight(platform, match, telemetry, registered)
-        if highlight:
-            for thread_id in settings.discord_pubg_thread_ids:
-                discord.send_with_files(thread_id, *highlight)
+        return build_highlight(platform, match, telemetry, registered)
     except Exception as exc:
-        monitoring.error("pubg.highlight", exc, "베스트 킬 하이라이트 실패 — 본 리포트는 전송됨", "numpy 설치·지도 원본 다운로드 확인")
+        monitoring.error("pubg.highlight", exc, "베스트 킬 하이라이트 실패 — 리포트는 하이라이트 없이 전송", "numpy 설치·지도 원본 다운로드 확인")
         print(f"[pubg] highlight failed: {exc}")
+        return None
 
 
 def _registered_in_match(platform: str, match: dict[str, Any], players: list[PubgPlayer]) -> list[PubgPlayer]:

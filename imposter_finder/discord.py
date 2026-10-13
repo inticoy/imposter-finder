@@ -18,6 +18,17 @@ def _silent(payload: dict) -> dict:
     return payload | {"flags": payload.get("flags", 0) | SUPPRESS_NOTIFICATIONS}
 
 
+def with_highlight(payload: dict, files: list[tuple], highlight: tuple[dict, list[tuple]] | None) -> tuple[dict, list[tuple]]:
+    """하이라이트 GIF를 리포트의 마지막 이미지로 (경기 흐름 뒤, 총평 글 앞). 없으면 그대로."""
+    if not highlight:
+        return payload, files
+    extra = highlight[1]
+    box = next(c for c in payload["components"] if c["type"] == 17)
+    last = max((i for i, c in enumerate(box["components"]) if c["type"] == 12), default=-1)
+    box["components"].insert(last + 1, {"type": 12, "items": [{"media": {"url": f"attachment://{extra[0][0]}"}}]})
+    return payload, files + extra
+
+
 class DiscordClient:
     def __init__(self, bot_token: str, timeout: int = 20) -> None:
         self.bot_token = bot_token

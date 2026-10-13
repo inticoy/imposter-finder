@@ -4,7 +4,8 @@ from unittest.mock import Mock, patch
 
 from imposter_finder.analysis import lol_highlight as H
 from imposter_finder.analysis.lol_report import Friend
-from imposter_finder.lol_collector import _send_highlight
+from imposter_finder.discord import with_highlight
+from imposter_finder.lol_collector import _highlight
 
 
 def _match(map_id: int = 11) -> dict:
@@ -112,20 +113,22 @@ class DeathTests(unittest.TestCase):
 
 
 class CollectorTests(unittest.TestCase):
-    def test_highlight_failure_never_raises(self):
-        settings = Mock(discord_lol_thread_ids=("thread",))
-        discord = Mock()
+    def test_highlight_failure_means_report_without_it(self):
         with patch("imposter_finder.analysis.lol_highlight.build_highlight", side_effect=RuntimeError("boom")):
-            _send_highlight(settings, discord, _match(), _timeline(), {"1": Friend("친구", None)})
-        discord.send_with_files.assert_not_called()
+            self.assertIsNone(_highlight(_match(), _timeline(), {"1": Friend("친구", None)}))
 
-    def test_highlight_is_sent_as_its_own_message(self):
-        settings = Mock(discord_lol_thread_ids=("a", "b"))
-        discord = Mock()
-        message = ({"components": []}, [("highlight.gif", b"GIF", "image/gif")])
-        with patch("imposter_finder.analysis.lol_highlight.build_highlight", return_value=message):
-            _send_highlight(settings, discord, _match(), _timeline(), {"1": Friend("친구", None)})
-        self.assertEqual(discord.send_with_files.call_count, 2)
+    def test_highlight_is_the_last_image_before_the_text(self):
+        report = {"components": [{"type": 17, "components": [
+            {"type": 12, "items": [{"media": {"url": "attachment://result.png"}}]},
+            {"type": 12, "items": [{"media": {"url": "attachment://flow.gif"}}]},
+            {"type": 10, "content": "**총평**"}]}, {"type": 1, "components": []}]}
+        highlight = ({"components": []}, [("highlight.gif", b"GIF", "image/gif")])
+        payload, files = with_highlight(report, [("result.png", b""), ("flow.gif", b"")], highlight)
+        box = payload["components"][0]["components"]
+        self.assertEqual([c.get("items", [{}])[0].get("media", {}).get("url") for c in box],
+                         ["attachment://result.png", "attachment://flow.gif", "attachment://highlight.gif", None])
+        self.assertEqual([f[0] for f in files], ["result.png", "flow.gif", "highlight.gif"])
+        self.assertIs(with_highlight(report, files, None)[1], files)
 
 
 class CameraTests(unittest.TestCase):
