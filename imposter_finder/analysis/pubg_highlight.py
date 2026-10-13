@@ -447,7 +447,7 @@ class Terrain:
 
 # ── 카메라·그리기 ─────────────────────────────────────────
 class Camera:
-    """세로선이 서 있는 카메라. 지도 좌표 (x 동쪽, y 남쪽, z 위)를 그대로 쓴다.
+    """실제 pitch 회전을 사용하는 핀홀 카메라. 지도 좌표 (x 동쪽, y 남쪽, z 위).
 
     yaw: 바라보는 방향 (지도에서 0 = 북쪽, 시계 방향), pitch: 내려다보는 각, dist: 목표까지 거리.
     """
@@ -456,6 +456,7 @@ class Camera:
                  scale: int = 1):
         self.w, self.h = W * scale, H * scale
         yr, pr = math.radians(yaw), math.radians(pitch)
+        self.sin_pitch, self.cos_pitch = math.sin(pr), math.cos(pr)
         self.fx, self.fy = math.sin(yr), -math.cos(yr)  # 지도 좌표의 앞 (y가 남쪽이라 북쪽은 -y)
         self.rx, self.ry = -self.fy, self.fx  # 오른쪽 (지도에서 앞을 시계 방향 90도)
         tx, ty, tz = target
@@ -468,9 +469,12 @@ class Camera:
     def project(self, x: float, y: float, z: float) -> tuple[float, float, float]:
         dx, dy = x - self.cx, y - self.cy
         fwd = dx * self.fx + dy * self.fy
-        fwd = max(fwd, 0.1)
         side = dx * self.rx + dy * self.ry
-        return self.w / 2 + self.focal * side / fwd, self.v0 - self.focal * (z * EXAG - self.cz) / fwd, fwd
+        up = z * EXAG - self.cz
+        depth = max(fwd * self.cos_pitch - up * self.sin_pitch, .1)
+        vertical = fwd * self.sin_pitch + up * self.cos_pitch
+        return self.w / 2 + self.focal * side / depth, self.h / 2 - self.focal * vertical / depth, depth
+
 
 
 def _background():
@@ -483,6 +487,44 @@ def _background():
 
 
 def render_terrain(terrain: Terrain, cam: Camera):
+    """Render the height field in an upright virtual camera, then rotate its rays.
+
+    The terrain scan relies on vertical image columns. Rectification preserves
+    that fast scan while giving terrain and actors the same tilted pinhole view.
+    Depth is converted from horizontal forward distance to camera-space Z.
+    """
+    import copy
+    import numpy as np
+    yy, xx = np.mgrid[0:cam.h, 0:cam.w].astype(np.float32)
+    u = (xx + .5 - cam.w / 2) / cam.focal
+    v = (cam.h / 2 - yy - .5) / cam.focal
+    forward = cam.cos_pitch + v * cam.sin_pitch
+    if np.any(forward <= 0):
+        raise ValueError("Terrain camera rays must point below the horizon")
+    vertical = -cam.sin_pitch + v * cam.cos_pitch
+    ox = cam.w / 2 + cam.focal * u / forward
+    oy = cam.v0 - cam.focal * vertical / forward
+    virtual = copy.copy(cam)
+    virtual.w = int(math.ceil(2 * float(np.max(np.abs(ox - cam.w / 2))))) + 4
+    y_start = math.floor(float(oy.min())) - 2
+    virtual.h = math.ceil(float(oy.max())) - y_start + 3
+    virtual.v0 = cam.v0 - y_start
+    image, old_depth = _render_terrain_upright(terrain, virtual)
+    x = ox + (virtual.w - cam.w) / 2 - .5
+    y = oy - y_start - .5
+    ix, iy = np.floor(x).astype(np.int32), np.floor(y).astype(np.int32)
+    ix = np.clip(ix, 0, virtual.w - 2); iy = np.clip(iy, 0, virtual.h - 2)
+    fx, fy = (x - ix)[..., None], (y - iy)[..., None]
+    pixels = np.asarray(image, dtype=np.float32)
+    color = ((pixels[iy, ix] * (1-fx) + pixels[iy, ix+1] * fx) * (1-fy)
+             + (pixels[iy+1, ix] * (1-fx) + pixels[iy+1, ix+1] * fx) * fy)
+    nearest_x = np.clip(np.rint(x).astype(np.int32), 0, virtual.w-1)
+    nearest_y = np.clip(np.rint(y).astype(np.int32), 0, virtual.h-1)
+    depth = old_depth[nearest_y, nearest_x] / forward
+    return Image.fromarray(np.clip(color, 0, 255).astype(np.uint8)), depth
+
+
+def _render_terrain_upright(terrain: Terrain, cam: Camera):
     """화면 세로줄마다 땅 위 직선을 앞에서 뒤로 훑는다: 높이를 화면 줄로 바꿔 누적 최소값 = 가려짐.
 
     돌려주는 것: (RGB 그림, 픽셀마다 앞 거리 — 사람·총알 가려짐 판정용)

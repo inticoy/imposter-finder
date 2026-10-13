@@ -353,9 +353,7 @@ class Scene:
         if shot.get("assist") and shot.get("assistX") is not None and kind not in ("penalty", "freekick"):
             A = _world(shot["assistX"], shot["assistY"])
             A = (clamp(A[0], 0.5, 104.5), clamp(A[1], 0.5, 67.5))
-            if math.dist(A, S) < 3:
-                A = None
-        self.assisted = A is not None
+        self.assisted = bool(shot.get("assist") and shot.get("assistSpId"))
         if A is None and kind in ("header", "volley"):  # 도움 기록이 없어도 머리·발리는 날아온 공이다: 측면 크로스로
             A = (clamp(S[0] - 10, 60, 100), 5.0 if S[1] > 34 else 63.0)
         self.A = A
@@ -694,6 +692,15 @@ def _team_kit(team: Team) -> dict:
     return _kit(*KITS[name]) if name in KITS else _kit(team.color)
 
 
+def _match_kits(home: Team, away: Team) -> tuple[dict, dict]:
+    """Resolve a kit clash independently of crest/UI colors, including same-club matches."""
+    a, b = _team_kit(home), _team_kit(away)
+    if sum(abs(x-y) for x,y in zip(a['shirt'], b['shirt'])) < 180:
+        alternate = (242, 244, 247) if sum(a['shirt']) < 560 else (28, 52, 100)
+        b = _kit(alternate, (28, 34, 48), alternate)
+    return a, b
+
+
 SKIN, HAIR, BOOT = (222, 178, 144), (44, 33, 26), (24, 24, 28)
 
 
@@ -746,7 +753,7 @@ def _pose(pose: str, phase: float) -> dict:
     return {"feet": feet, "hands": hands, "hip": hip, "lean": lean}
 
 
-def _figure(d: ImageDraw.ImageDraw, cam: Cam, anchor, kit: dict, pose: str, phase: float, facing: int,
+def _figure_procedural(d: ImageDraw.ImageDraw, cam: Cam, anchor, kit: dict, pose: str, phase: float, facing: int,
             dive: float = 0.0, number: int | None = None, heading: tuple | None = None, body: dict | None = None) -> None:
     """Articulated world-space player: limbs and shirt rotate with the runner, never billboard-flip."""
     projected, depth = cam.proj(anchor)
@@ -781,11 +788,14 @@ def _figure(d: ImageDraw.ImageDraw, cam: Cam, anchor, kit: dict, pose: str, phas
             side = (1,0,0)
         other = norm(cross(axis,side))
         rings=[]
-        for center,radius in ((a,r0),(b,r1)):
-            rings.append([add(center,add(mul(side,math.cos(i*math.tau/8)*radius),mul(other,math.sin(i*math.tau/8)*radius))) for i in range(8)])
-        for i in range(8):
-            j=(i+1)%8;face([rings[0][i],rings[0][j],rings[1][j],rings[1][i]],color)
-        face(rings[0][::-1],color);face(rings[1],color)
+        # Anatomical profile: rounded joints, muscle belly, tapered wrist/ankle.
+        for t,k in ((0,.75),(.18,1.12),(.48,1.05),(.82,.85),(1,.70)):
+            center=lerp(a,b,t);radius=(r0*(1-t)+r1*t)*k
+            rings.append([add(center,add(mul(side,math.cos(i*math.tau/10)*radius),mul(other,math.sin(i*math.tau/10)*radius*.85))) for i in range(10)])
+        for ring in range(len(rings)-1):
+            for i in range(10):
+                j=(i+1)%10;face([rings[ring][i],rings[ring][j],rings[ring+1][j],rings[ring+1][i]],color)
+        face(rings[0][::-1],color);face(rings[-1],color)
 
     def box(x,z,front,width,height,color,side=0):
         corners=[point(x+dx,z+dz,sy+side) for dz in (-height/2,height/2) for sy in (-width/2,width/2) for dx in (-front/2,front/2)]
@@ -805,7 +815,19 @@ def _figure(d: ImageDraw.ImageDraw, cam: Cam, anchor, kit: dict, pose: str, phas
         bone(s,lerp(s,e,.5),.072,.064,kit['shirt'])
         bone(lerp(s,e,.5),e,.063,.052,SKIN);bone(e,w,.052,.036,SKIN)
     box(hip[0],hip[1]-.08,.28,.36,.25,kit['shorts'])
-    box(lean*.5,hip[1]+.23,.25,.43,.47,kit['shirt'])
+    # Tailored jersey silhouette: waist, chest, shoulders and neckline.
+    torso=[]
+    for dz,half_width,half_front in ((.01,.16,.12),(.15,.17,.115),(.34,.235,.14),(.46,.21,.12),(.49,.09,.07)):
+        torso.append([point(lean*dz/.49+math.cos(i*math.tau/12)*half_front,
+                            hip[1]+dz,math.sin(i*math.tau/12)*half_width) for i in range(12)])
+    for row in range(len(torso)-1):
+        for i in range(12):
+            j=(i+1)%12
+            face([torso[row][i],torso[row][j],torso[row+1][j],torso[row+1][i]],kit['shirt'])
+    face(torso[-1],kit['ink'])
+    # Front crest and placket rotate with the shirt, never appear on its back.
+    face([point(lean*.7+.145,hip[1]+z,side) for z,side in ((.29,-.08),(.29,-.035),(.35,-.035),(.35,-.08))],kit['ink'])
+    face([point(lean*.8+.145,hip[1]+z,side) for z,side in ((.36,-.015),(.36,.015),(.43,.015),(.43,-.015))],kit['ink'])
     bone(point(lean,shoulder_z+.01),point(lean,shoulder_z+.13),.065,.061,SKIN)
     # Small faceted ellipsoid: shaded head volume and a hair cap.
     center=point(lean+.01,shoulder_z+.24)
@@ -818,6 +840,11 @@ def _figure(d: ImageDraw.ImageDraw, cam: Cam, anchor, kit: dict, pose: str, phas
         for lon in range(8):
             nxt=(lon+1)%8
             face([rows[lat][lon],rows[lat][nxt],rows[lat+1][nxt],rows[lat+1][lon]],HAIR if lat>=3 else SKIN)
+    # Nose, eyes and front hairline make the world facing direction legible.
+    nose=point(lean+.14,shoulder_z+.24)
+    face([point(lean+.11,shoulder_z+.28,-.024),nose,point(lean+.11,shoulder_z+.21,.024)],_shade(SKIN,.85))
+    for side in (-.047,.047):
+        face([point(lean+.113,shoulder_z+z,side+dy) for z,dy in ((.28,-.015),(.28,.015),(.30,.015),(.30,-.015))],HAIR)
     for _,poly,color in sorted(meshes,key=lambda item:-item[0]):
         d.polygon(poly,fill=color)
     # Number follows the shirt's back face rather than floating on the viewer-facing plane.
@@ -826,6 +853,14 @@ def _figure(d: ImageDraw.ImageDraw, cam: Cam, anchor, kit: dict, pose: str, phas
         pos,z=cam.proj(back)
         if pos and cam.f/z>34:
             d.text(pos,str(number),font=font(max(8,round(cam.f/z*.22)),6),fill=kit['ink'],anchor='mm')
+
+
+def _figure(d, cam, anchor, kit, pose, phase, facing, dive=0.0, number=None, heading=None, body=None):
+    from imposter_finder.analysis.fc_player_mesh import draw_player
+    try:
+        draw_player(d, cam, anchor, kit, pose, phase, heading or (float(facing),0.0), dive, number)
+    except (OSError, ValueError, KeyError):
+        _figure_procedural(d, cam, anchor, kit, pose, phase, facing, dive, number, heading, body)
 
 
 def _shadow(d: ImageDraw.ImageDraw, cam: Cam, pos, size: float = .38, alpha: int = 80, long: bool = True) -> None:
@@ -1128,7 +1163,7 @@ def render(left: Team, right: Team, meta: FcMeta, picked: tuple[Team, dict] | No
     players = {p["spId"]: p for p in team.side.get("player", [])}
     number = lambda spid, default: NUMBERS.get((players.get(spid) or {}).get("spPosition"), default)
     scene = Scene(shot, number(shot["spId"], 9), number(shot.get("assistSpId"), 8))
-    rd = Renderer(scene, _team_kit(team), _team_kit(other))
+    rd = Renderer(scene, *_match_kits(team, other))
 
     before = {id(t): sum(1 for s in t.side.get("shootDetail", []) if s.get("result") == SHOT_GOAL
                          and s["goalTime"] < shot["goalTime"]) for t in (left, right)}

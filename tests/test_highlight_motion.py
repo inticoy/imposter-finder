@@ -68,6 +68,61 @@ class PubgCameraTests(unittest.TestCase):
         self.assertAlmostEqual(foot[1],280)
         self.assertLess(head[1],foot[1])
 
+class HighlightEvidenceRegressionTests(unittest.TestCase):
+    def test_close_assist_is_not_discarded(self):
+        shot={'spId':101,'goalTime':4800,'x':.895,'y':.5,'type':6,
+              'assist':True,'assistSpId':102,'assistX':.89,'assistY':.5}
+        scene=F.Scene(shot,8,9)
+        self.assertTrue(scene.assisted)
+        self.assertEqual(scene.A,F._world(.89,.5))
+        self.assertIn('passer',[p[0] for p in scene.players(0)])
+
+    def test_same_club_uses_distinct_shirts(self):
+        from imposter_finder.analysis.fc_report import Team,Friend
+        team=lambda name:Team({'nickname':name},Friend(name,None),None,'맨체스터 유나이티드',(214,30,36))
+        home,away=F._match_kits(team('A'),team('B'))
+        self.assertGreater(sum(abs(a-b) for a,b in zip(home['shirt'],away['shirt'])),180)
+
+    def test_pubg_camera_uses_camera_space_distance(self):
+        cam=Camera((1000,1000,30),0,58,300)
+        self.assertAlmostEqual(cam.project(1000,1000,30)[2],300)
+        # Elevated point is closer along the pitched optical axis.
+        self.assertAlmostEqual(cam.project(1000,1000,40)[2],300-10*math.sin(math.radians(58)))
+        self.assertAlmostEqual(cam.project(1000,1000,40)[1],280-cam.focal*10*math.cos(math.radians(58))/(300-10*math.sin(math.radians(58))))
+
+    def test_pubg_flat_terrain_depth_agrees_with_actor_projection(self):
+        from types import SimpleNamespace
+        import numpy as np
+        from imposter_finder.analysis import pubg_highlight as P
+        cam=Camera((0,0,0),25,58,100)
+        cam.w,cam.h=80,45;cam.focal*=.08;cam.v0=cam.h/2-cam.focal*math.tan(math.radians(58))
+        n=16
+        terrain=SimpleNamespace(cx=0,cy=0,half=150,step=300/n,bottom=-5,zmax=0,
+                                h=np.zeros((n,n)),rgb=np.full((n,n,3),100,dtype=np.float32),wall_lit=np.ones((n,n)))
+        with patch.object(P,'TEX',n):
+            _,depth=P.render_terrain(terrain,cam)
+        for x,y in ((0,0),(20,10),(-20,-15)):
+            sx,sy,z=cam.project(x,y,0)
+            self.assertAlmostEqual(depth[int(sy),int(sx)],z,delta=3)
+
+class FootballAssetTests(unittest.TestCase):
+    def test_real_mesh_has_rig_and_kit_materials(self):
+        from imposter_finder.analysis.fc_player_mesh import model,posed
+        mesh=model()
+        self.assertIn('Shirt',mesh.part_materials)
+        self.assertIn('Skin',mesh.part_materials)
+        self.assertIn('Eyes',mesh.part_materials)
+        idle=posed('stand',0);run=posed('run',1)
+        self.assertGreater(sum(len(indices) for _,indices,_ in idle),1000)
+        self.assertGreater(abs(idle[0][0]-run[0][0]).max(),.01)
+
+    def test_rig_rendering_does_not_depend_on_procedural_fallback(self):
+        from imposter_finder.analysis.fc_player_mesh import draw_player
+        im=Image.new('RGB',(F.VW*F.S,F.VH*F.S))
+        cam=F.Cam((88,22,4),(94,34,1),40)
+        draw_player(ImageDraw.Draw(im),cam,(94,34,0),F._kit((214,30,36)), 'stand',0,(1,0),0,11)
+        self.assertIsNotNone(im.getbbox())
+
 
 if __name__=='__main__':
     unittest.main()

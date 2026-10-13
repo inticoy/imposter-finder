@@ -582,7 +582,7 @@ def _rounded_mask(w: int, h: int, radius: int = 14) -> Image.Image:
 
 
 def render(match: dict, timeline: dict, friend_puuids: set[str], ddragon: DDragon | None = None,
-           highlight: Highlight | None = None) -> bytes | None:
+           highlight: Highlight | None = None, use_models: bool = True) -> bytes | None:
     """친구 최고 교전 GIF. 소환사의 협곡이 아니거나 친구 킬이 없으면 None."""
     info = match["info"]
     if info.get("mapId") != 11:
@@ -808,11 +808,36 @@ def render(match: dict, timeline: dict, friend_puuids: set[str], ddragon: DDrago
             held[item[0]] = (item[3], item[4])
         placed.sort(key=lambda it: (it[2], it[0] == star))
         for pid, gx, gy, px, py, d in placed:
+            model_sprite = None
+            if use_models and not intro and ps[pid].get('championId'):
+                from imposter_finder.analysis.character_models import sprite
+                position = tracks[pid].at(t)
+                before = tracks[pid].at(max(T0, t - 200)) or position
+                dx, dy = position[0]-before[0], position[1]-before[1]
+                walking = math.hypot(dx, dy) > 12
+                if walking:
+                    heading = math.degrees(math.atan2(dx, -dy))
+                else:
+                    target = ps[pid]['teamId'] == team_id
+                    heading = 90 if target else -90
+                angle = round((heading - cam.yaw) / 22.5) % 16
+                model_sprite = sprite(ps[pid]['championName'], ps[pid]['championId'], angle,
+                                      round(cam.pitch/5), int(t/100)%8, walking)
             sw, sh = d * 0.7, d * 0.24
             ld.ellipse((gx - sw / 2, gy - sh / 2, gx + sw / 2, gy + sh / 2), fill=(0, 0, 0, 130))
-            ld.line((gx, gy, px, py + d / 2 - 1), fill=color_of(pid) + (210,), width=2)
-            spr = portrait(pid, d)
-            layer.alpha_composite(spr, (round(px - spr.width / 2), round(py - spr.height / 2)))
+            if model_sprite is not None:
+                height = max(32, round(d*1.9))
+                model_sprite = model_sprite.resize((height*320//100, height*320//100), Image.Resampling.LANCZOS)
+                ratio = height/100
+                layer.alpha_composite(model_sprite, (round(gx-160*ratio), round(gy-240*ratio)))
+                ld.ellipse((gx-sw/2,gy-sh/2,gx+sw/2,gy+sh/2),outline=color_of(pid)+(230,),width=2)
+                # Keep the small portrait for champion recognition above the model.
+                spr = portrait(pid, 20 if pid != star else 24)
+                layer.alpha_composite(spr,(round(gx-spr.width/2),round(gy-height-spr.height-4)))
+            else:
+                ld.line((gx, gy, px, py + d / 2 - 1), fill=color_of(pid) + (210,), width=2)
+                spr = portrait(pid, d)
+                layer.alpha_composite(spr, (round(px - spr.width / 2), round(py - spr.height / 2)))
         pos_of = {it[0]: (it[3], it[4]) for it in placed}
         if star in pos_of:  # 주인공 이름표
             sx, sy = pos_of[star]
@@ -820,7 +845,7 @@ def render(match: dict, timeline: dict, friend_puuids: set[str], ddragon: DDrago
             name = nickname(ps[star])
             f = font(14, 6)
             w = ld.textlength(name, font=f)
-            top = sy - d / 2 - 28
+            top = sy - d / 2 - (80 if use_models else 28)
             ld.rounded_rectangle((sx - w / 2 - 9, top, sx + w / 2 + 9, top + 22), radius=11, fill=HIGHLIGHT + (240,))
             ld.text((sx, top + 11), name, font=f, fill=BG, anchor="mm")
 
