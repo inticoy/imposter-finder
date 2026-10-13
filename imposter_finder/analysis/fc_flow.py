@@ -177,9 +177,17 @@ def render(left: Team, right: Team, names: dict[int, str]) -> bytes:
             if phase == "result":
                 word = ("골대" if current.get("hitPost") else "")
                 word = {SHOT_GOAL: "골!", SHOT_ON: "선방"}.get(current["result"], word or "빗나감")
-                color = current["team"].color if current["result"] == SHOT_GOAL else WHITE
-                d.text((WIDTH / 2, PITCH_Y + 26), word, font=font(30 if current["result"] == SHOT_GOAL else 22, 6),
-                       fill=color, anchor="ma", stroke_width=4, stroke_fill=PITCH_DARK)
+                # 경기장 가운데 큰 판: 골은 팀 색, 나머지는 어두운 판
+                goal = current["result"] == SHOT_GOAL
+                f = font(60 if goal else 44, 6)
+                fill = current["team"].color if goal else BG
+                ink = BG if goal and sum(fill) > 450 else WHITE  # 밝은 팀 색 위에는 어두운 글씨
+                mx, my = WIDTH / 2, PITCH_Y + PH / 2
+                tw = d.textlength(word, font=f)
+                ph = 92 if goal else 74
+                d.rounded_rectangle((mx - tw / 2 - 36, my - ph / 2, mx + tw / 2 + 36, my + ph / 2), radius=ph // 2,
+                                    fill=fill, outline=WHITE if goal else None, width=3)
+                d.text((mx, my), word, font=f, fill=ink, anchor="mm")
         # 누적 xG: 지금 시각까지
         for team in (left, right):
             v, pts = 0.0, [(sx(0), sy(0))]

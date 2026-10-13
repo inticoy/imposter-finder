@@ -195,6 +195,34 @@ class LocalStore:
             )
             self._connection.commit()
 
+    def fc_matches(self) -> list[dict[str, Any]]:
+        """쌓인 친구전 전부, 오래된 순."""
+        with self._lock:
+            rows = self._connection.execute("SELECT payload_json FROM fc_matches ORDER BY match_date").fetchall()
+        return [json.loads(row["payload_json"]) for row in rows]
+
+    def fc_sent_after(self, platform: str, after: str | None) -> list[dict[str, Any]]:
+        """리포트를 보낸 친구전 중 after(matchDate)보다 뒤, 오래된 순."""
+        with self._lock:
+            rows = self._connection.execute(
+                """
+                SELECT m.payload_json FROM fc_matches m
+                JOIN match_notifications n ON n.match_id = m.match_id AND n.platform = ? AND n.outcome = 'sent'
+                WHERE ? IS NULL OR m.match_date > ?
+                ORDER BY m.match_date
+                """,
+                (platform, after, after),
+            ).fetchall()
+        return [json.loads(row["payload_json"]) for row in rows]
+
+    def last_notification(self, platform: str) -> str | None:
+        """가장 최근에 처리한 match_id (리그 리포트처럼 '어디까지 다뤘나' 표시용)."""
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT match_id FROM match_notifications WHERE platform = ? ORDER BY processed_at DESC, rowid DESC LIMIT 1",
+                (platform,)).fetchone()
+        return row["match_id"] if row else None
+
     def fc_head_to_head(self, ouid_a: str, ouid_b: str, limit: int = 10) -> list[dict[str, Any]]:
         """두 사람이 함께 뛴 경기, 최신순."""
         with self._lock:
