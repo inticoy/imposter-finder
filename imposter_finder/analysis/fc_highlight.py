@@ -332,6 +332,8 @@ def _ball_sprite(n: int = 96) -> Image.Image:
 GOAL_Y0, GOAL_Y1, BAR = 30.34, 37.66, 2.44
 TOP_BACK, BOT_BACK = (106.2, 2.3), (107.2, 0.0)  # 그물 뒤쪽 위·아래 (x, z)
 R_BALL = 0.11
+JUMP = 0.5  # 헤딩 점프 높이 (m)
+FOREHEAD = (0.18, 1.71)  # 선 자세 기준 이마: 몸 앞쪽 · 높이 (m)
 
 
 def _world(x: float, y: float) -> tuple[float, float]:
@@ -377,7 +379,7 @@ class Scene:
             gy = rng.choice((31.4, 36.6))
         self.G = (105.0, gy, gz)
         self.keeper_wrong = kind == "penalty" and rng.random() < 0.5  # 페널티: 반대로 뜨기도
-        self.z0 = {"header": 1.9, "volley": 0.75}.get(kind, R_BALL)
+        self.z0 = {"header": JUMP + FOREHEAD[1], "volley": 0.75}.get(kind, R_BALL)
 
         self.T0 = 0.3  # 패스 전 잠깐
         self.direct = A is not None and kind in ("header", "volley")  # 크로스를 바로 머리·발리로
@@ -479,8 +481,9 @@ class Scene:
             pose = "run"
             if kind == "header":
                 jump = clamp((t - (T_SHOT - .35)) / .7, 0, 1)
-                z = .55 * math.sin(math.pi * jump)
-                p = lerp(start, S, ease((t - .1) / (T_SHOT - .15))) if t < T_SHOT else S
+                z = JUMP * math.sin(math.pi * jump)
+                take_off = sub(S, mul(flat, FOREHEAD[0]))  # 공이 이마에 닿도록 몸은 공 뒤에
+                p = lerp(start, take_off, ease((t - .1) / (T_SHOT - .15))) if t < T_SHOT else take_off
                 pose = "header" if 0 < jump < 1 else "run"
         else:
             b = self.ball(min(t, T_SHOT))
@@ -490,9 +493,10 @@ class Scene:
             pose = "volley" if kind == "volley" else "kick"
             if t >= T_SHOT:
                 p = contact
-        if t >= T_SHOT + .32:  # 카메라 반대쪽으로 달려가 세리머니 (화면 안에 남게)
-            u = ease((t - T_SHOT - .32) / 1.6)
-            begin = contact if kind != "header" else S
+        land = T_SHOT + (.36 if kind == "header" else .32)  # 헤딩은 착지한 뒤에 달려 나간다
+        if t >= land:  # 카메라 반대쪽으로 달려가 세리머니 (화면 안에 남게)
+            u = ease((t - land) / 1.6)
+            begin = contact if kind != "header" else sub(S, mul(flat, FOREHEAD[0]))
             end = add(begin, add(mul(flat, 5), mul(cam_side, -1.5)))
             end = (min(end[0], 103), clamp(end[1], 2, 66))
             p = lerp(begin, end, u)
@@ -553,7 +557,7 @@ class Scene:
             out.append(("gk", "keeper", (104.1, ky, 0), "keeper", 0, 0, 1))
         else:
             ty = (68 - self.G[1]) if self.keeper_wrong else self.G[1]
-            c = lerp((104.1, ky, .95), (104.2, ky + (ty - ky) * .62, .55 + min(self.G[2], 1.8) * .35), dive)
+            c = lerp((104.1, ky, .66), (104.2, ky + (ty - ky) * .62, .55 + min(self.G[2], 1.8) * .35), dive)
             if t > start + .75:  # 떨어진다
                 c = (c[0], c[1], max(.25, c[2] - (t - start - .75) * 2.5))
             out.append(("gk", "keeper", c, "dive", dive * (1 if ty > ky else -1), 0, 1))
@@ -614,6 +618,8 @@ class Scene:
         if pose in ('kick', 'volley'):
             contact = self.T0 if name == 'passer' else self.T_SHOT
             return clamp((t-contact+.16)/.48, 0, 1)
+        if pose == 'header':  # 0 도약 · .5 공에 닿음 · 1 착지
+            return clamp((t-self.T_SHOT+.35)/.7, 0, 1)
         return self.motion(name, t)[0]
 
     def players(self, t: float) -> list[tuple]:
@@ -622,6 +628,8 @@ class Scene:
             phase, speed, _ = self.motion(name, t)
             if pose == 'run' and speed < .12:
                 pose = 'stand'
+            if pose == 'celebrate' and speed < .6:  # 멈추면 두 팔을 번쩍
+                pose, phase = 'cheer', clamp(t - self.T_NET, 0, 3)
             out.append((name, team, pos, pose, dive, self.action_phase(name, pose, t), number))
         return out
 

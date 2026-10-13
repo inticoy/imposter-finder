@@ -51,6 +51,8 @@ INTRO = 14  # 전체 지도 → 교전으로 다가가는 장면 수
 PRE_MS, POST_MS = 9000, 3500  # 첫 킬 전 · 마지막 킬 뒤
 STEP_CALM, STEP_FIGHT, STEP_SLOW = 220, 130, 65  # 장면 하나가 보여 주는 경기 시간 (ms)
 SLOW_BEFORE, SLOW_AFTER = 900, 1100  # 킬 앞뒤 느린 화면
+DEATH_MS = 1400  # 쓰러지는 모션을 보여 주는 시간
+ATTACK_MS = 800  # 평타 한 번
 CLUSTER_MS = 12_000  # 이 안에 이어진 킬은 같은 교전
 HFOV = math.radians(46)
 PITCH = 52  # 카메라 기울기 (지면에서 위로)
@@ -280,11 +282,12 @@ def route(a: tuple[float, float], b: tuple[float, float]) -> list[tuple[float, f
 class Track:
     """한 챔피언의 장면 속 경로: [(시작 ms, 끝 ms, 꺾은선)] — 구간마다 걷고 남은 시간은 서 있는다."""
     legs: list[tuple[float, float, list[tuple[float, float]], float]] = field(default_factory=list)
+    speed: float = RUN  # 챔피언 이동 속도 (월드 단위/ms)
 
     def add(self, t0: float, p0, t1: float, p1) -> None:
         line = route(p0, p1)
         length = sum(math.dist(u, v) for u, v in zip(line, line[1:]))
-        speed = max(RUN, length / max(t1 - t0, 1))
+        speed = max(self.speed, length / max(t1 - t0, 1))
         self.legs.append((t0, t1, line, length / speed if length else 0))
 
     def at(self, t: float) -> tuple[float, float] | None:
@@ -294,8 +297,7 @@ class Track:
             if t0 <= t <= t1:
                 if travel <= 0:
                     return line[-1]
-                u = min(1.0, (t - t0) / travel)
-                u = u * u * (3 - 2 * u) if travel > 600 else u  # 오래 걷는 구간만 출발·도착을 부드럽게
+                u = min(1.0, (t - t0) / travel)  # 롤은 가속이 없다: 같은 속도로 출발하고 바로 선다
                 length = sum(math.dist(a, b) for a, b in zip(line, line[1:]))
                 left = u * length
                 for a, b in zip(line, line[1:]):
@@ -485,6 +487,15 @@ def _attack_range(version: str, champion: str) -> float:
         return 300.0
 
 
+def _move_speed(version: str, champion: str, t: float) -> float:
+    """기본 이동 속도 + 신발(8분 뒤엔 대개 2단계 신발 +45) → 월드 단위/ms."""
+    try:
+        base = float(_champion_data(version, champion)["stats"]["movespeed"])
+    except Exception:
+        base = 340.0
+    return (base + (45 if t > 8 * 60_000 else 25 if t > 4 * 60_000 else 0)) / 1000
+
+
 def build_tracks(info: dict, timeline: dict, t0: float, t1: float, center: tuple[float, float],
                  version: str) -> tuple[dict[int, Track], dict[int, Deaths]]:
     """장면 앞뒤 1분 남짓의 증거로 경로를 만든다. 반환: (pid → Track, pid → 죽음·부활)."""
@@ -560,7 +571,7 @@ def build_tracks(info: dict, timeline: dict, t0: float, t1: float, center: tuple
                 if nxt and math.dist(p[1:3], nxt[1:3]) / max(nxt[0] - p[0], 1) > VMAX:
                     continue
             kept.append(p)
-        track = Track()
+        track = Track(speed=_move_speed(version, ps[pid]["championName"], t0))
         far = all(math.dist(p[1:3], center) > NEAR * 2 for p in kept)
         for a, b in zip(kept, kept[1:]):
             if paths[pid].dead_at((a[0] + b[0]) / 2):
@@ -720,6 +731,19 @@ def render(match: dict, timeline: dict, friend_puuids: set[str], ddragon: DDrago
 
     broken = [b for b in events if b["type"] == "BUILDING_KILL" and b.get("position") and b["timestamp"] <= T1]
 
+    facing: dict[int, float] = {}
+    reach = {pid: min(max(_attack_range(version, p["championName"]), 150), 650) + 200 for pid, p in ps.items()}
+
+    def enemy_near(pid: int, at: tuple[float, float], t: float):
+        best = None
+        for other, track in tracks.items():
+            if ps[other]["teamId"] == ps[pid]["teamId"] or paths[other].dead_at(t):
+                continue
+            q = track.at(t)
+            if q and math.dist(q, at) <= reach[pid] and (best is None or math.dist(q, at) < math.dist(best, at)):
+                best = q
+        return best
+
     def draw(view: Image.Image, cam: Camera, t: float, intro: bool = False) -> Image.Image:
         im = ui.copy()
         im.paste(view, VIEW[:2], view_mask)
@@ -764,9 +788,10 @@ def render(match: dict, timeline: dict, friend_puuids: set[str], ddragon: DDrago
         # 챔피언: 지면 그림자 · 막대 · 초상 (먼 것부터)
         placed = []
         for pid, track in tracks.items():
-            if paths[pid].dead_at(t):
+            dead = paths[pid].dead_at(t)
+            if dead and not (use_models and not intro and t - dead[0] < DEATH_MS):
                 continue
-            p = track.at(t)
+            p = dead[2] if dead else track.at(t)
             if p is None:
                 continue
             gx, gy, _ = cam.project(p[0], p[1], 0)
@@ -811,18 +836,25 @@ def render(match: dict, timeline: dict, friend_puuids: set[str], ddragon: DDrago
             model_sprite = None
             if use_models and not intro and ps[pid].get('championId'):
                 from imposter_finder.analysis.character_models import sprite
-                position = tracks[pid].at(t)
-                before = tracks[pid].at(max(T0, t - 200)) or position
+                dead = paths[pid].dead_at(t)
+                position = dead[2] if dead else tracks[pid].at(t)
+                before = position if dead else tracks[pid].at(max(T0, t - 200)) or position
                 dx, dy = position[0]-before[0], position[1]-before[1]
                 walking = math.hypot(dx, dy) > 12
-                if walking:
-                    heading = math.degrees(math.atan2(dx, -dy))
-                else:
-                    target = ps[pid]['teamId'] == team_id
-                    heading = 90 if target else -90
+                action, phase = None, int(t/100) % 8
+                if dead:  # 쓰러지는 모션 (킬 자리에서)
+                    action, phase = 'death', min(7, int((t - dead[0]) / DEATH_MS * 8))
+                elif walking:
+                    facing[pid] = math.degrees(math.atan2(dx, -dy))
+                else:  # 멈춰 있으면 가까운 적에게 평타
+                    foe = enemy_near(pid, position, t)
+                    if foe:
+                        facing[pid] = math.degrees(math.atan2(foe[0]-position[0], -(foe[1]-position[1])))
+                        action, phase = 'attack', int(((t + pid * 173) % ATTACK_MS) / ATTACK_MS * 8)
+                heading = facing.get(pid, 90 if ps[pid]['teamId'] == team_id else -90)
                 angle = round((heading - cam.yaw) / 22.5) % 16
                 model_sprite = sprite(ps[pid]['championName'], ps[pid]['championId'], angle,
-                                      round(cam.pitch/5), int(t/100)%8, walking)
+                                      round(cam.pitch/5), phase, walking, action)
             sw, sh = d * 0.7, d * 0.24
             ld.ellipse((gx - sw / 2, gy - sh / 2, gx + sw / 2, gy + sh / 2), fill=(0, 0, 0, 130))
             if model_sprite is not None:

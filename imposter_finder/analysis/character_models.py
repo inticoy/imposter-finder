@@ -88,14 +88,25 @@ class Model:
         name=name or next((n for n in self.animations if n.lower().startswith(wanted) or n.lower().endswith('_'+wanted)),None)
         return self.animations.get(name)
 
-    def duration(self, walking):
-        animation=self.animation(walking)
+    def action(self, kind):
+        """Named clip for 'attack' / 'death', else None."""
+        names=sorted(self.animations,key=lambda n:(len(n),n))
+        if kind=='attack':
+            return next((n for n in names if n.lower().split('/')[-1].startswith(('attack1','attack'))),None) or \
+                next((n for n in names if 'attack' in n.lower()),None)
+        if kind=='death':
+            return next((n for n in names if 'death' in n.lower()),None)
+        return None
+
+    def duration(self, walking, name=None):
+        animation=self.animations.get(name) if name else self.animation(walking)
         return max((float(self.access(s['input'])[-1,0]) for s in animation['samplers']),default=1) if animation else 1
 
-    def pose(self, time, walking, rotations=None):
+    def locals(self, time, walking=False, name=None):
+        """Local TRS per node at `time` of an animation (by name, else run/idle)."""
         transforms=[{k:np.array(n.get(k,default),dtype=np.float32) for k,default in
                      (('translation',[0,0,0]),('rotation',[0,0,0,1]),('scale',[1,1,1]))} for n in self.nodes]
-        anim=self.animation(walking)
+        anim=self.animations.get(name) if name else self.animation(walking)
         if anim:
             for channel in anim['channels']:
                 target=channel['target'];path=target['path']
@@ -110,6 +121,31 @@ class Model:
                 val=a*(1-u)+b*u
                 if path=='rotation':val=val/max(float(np.linalg.norm(val)),1e-8)
                 transforms[target['node']][path]=val
+        return transforms
+
+    def world(self, transforms):
+        world={}
+        def matrix(i):
+            if i not in world:
+                node=self.nodes[i];x=transforms[i]
+                local=x['matrix'] if 'matrix' in x else (np.asarray(node['matrix'],dtype=np.float32).reshape(4,4).T if 'matrix' in node else _matrix(x['translation'],x['rotation'],x['scale']))
+                world[i]=matrix(self.parents[i])@local if i in self.parents else local
+            return world[i]
+        for i in range(len(self.nodes)):matrix(i)
+        return world
+
+    def skin(self, world):
+        result=[]
+        for verts,tri,joints,weights,bones,inverse,colors in self.parts:
+            skin=np.stack([world[i] for i in bones])@inverse
+            weighted=(skin[joints]*weights[:,:,None,None]).sum(axis=1)
+            homogeneous=np.column_stack((verts,np.ones(len(verts))))
+            posed=np.einsum('nij,nj->ni',weighted,homogeneous)[:,:3]
+            result.append((posed,tri,colors))
+        return result
+
+    def pose(self, time, walking, rotations=None):
+        transforms=self.locals(time,walking)
         if rotations:
             for i,node in enumerate(self.nodes):
                 if node.get('name') in rotations:
@@ -117,21 +153,7 @@ class Model:
                     a=transforms[i]['rotation'];b=np.asarray(rotations[node['name']])
                     xyz=a[3]*b[:3]+b[3]*a[:3]+np.cross(a[:3],b[:3])
                     transforms[i]['rotation']=np.r_[xyz,a[3]*b[3]-np.dot(a[:3],b[:3])]
-        world={}
-        def matrix(i):
-            if i not in world:
-                node=self.nodes[i];x=transforms[i]
-                local=np.asarray(node['matrix'],dtype=np.float32).reshape(4,4).T if 'matrix' in node else _matrix(x['translation'],x['rotation'],x['scale'])
-                world[i]=matrix(self.parents[i])@local if i in self.parents else local
-            return world[i]
-        result=[]
-        for verts,tri,joints,weights,bones,inverse,colors in self.parts:
-            skin=np.stack([matrix(i) for i in bones])@inverse
-            weighted=(skin[joints]*weights[:,:,None,None]).sum(axis=1)
-            homogeneous=np.column_stack((verts,np.ones(len(verts))))
-            posed=np.einsum('nij,nj->ni',weighted,homogeneous)[:,:3]
-            result.append((posed,tri,colors))
-        return result
+        return self.skin(self.world(transforms))
 
 
 @lru_cache(maxsize=32)
@@ -151,13 +173,23 @@ def model(champion: str, champion_id: int) -> Model | None:
 
 
 @lru_cache(maxsize=512)
-def sprite(champion: str, champion_id: int, angle: int, pitch: int, phase: int, walking: bool) -> Image.Image | None:
+def sprite(champion: str, champion_id: int, angle: int, pitch: int, phase: int, walking: bool,
+           action: str | None = None) -> Image.Image | None:
+    """phase: 0..7 through the clip (run/idle loop, or one attack swing / the death fall when `action` is set)."""
     mesh=model(champion,champion_id)
     if mesh is None:return None
+    clip=mesh.action(action) if action else None
     # Local GLTF: +Y up, +Z forward. Rotate into the viewer's ground plane.
     yaw=math.radians(angle*22.5);elevation=math.radians(pitch*5)
     scale=100/mesh.height;polygons=[]
-    for verts,indices,colors in mesh.pose(phase/8*mesh.duration(walking),walking):
+    if clip:
+        # Death holds its last frame; an attack swings once per cycle.
+        span=mesh.duration(False,clip)
+        when=min(phase/7,1)*span*.999 if action=='death' else phase/8*span*.6  # swing, not the idle tail
+        posed=mesh.skin(mesh.world(mesh.locals(when,False,clip)))
+    else:
+        posed=mesh.pose(phase/8*mesh.duration(walking),walking)
+    for verts,indices,colors in posed:
         x=verts[:,0]*math.cos(yaw)+verts[:,2]*math.sin(yaw)
         depth=-verts[:,0]*math.sin(yaw)+verts[:,2]*math.cos(yaw)
         z=verts[:,1]-mesh.floor

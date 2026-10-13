@@ -112,9 +112,20 @@ class FootballAssetTests(unittest.TestCase):
         self.assertIn('Shirt',mesh.part_materials)
         self.assertIn('Skin',mesh.part_materials)
         self.assertIn('Eyes',mesh.part_materials)
-        idle=posed('stand',0);run=posed('run',1)
+        idle,_=posed('stand',0);run,_=posed('run',1)
         self.assertGreater(sum(len(indices) for _,indices,_ in idle),1000)
         self.assertGreater(abs(idle[0][0]-run[0][0]).max(),.01)
+
+    def test_kicking_foot_stays_on_the_shin_and_header_meets_the_forehead(self):
+        import numpy as np
+        from imposter_finder.analysis.fc_player_mesh import Rig,_kick,head_point
+        rig=Rig();_kick(rig,1/3)
+        # The rig's feet are free IK bones: they must travel with the shin, not stay planted.
+        self.assertLess(np.linalg.norm(rig.at('Foot.R')-rig.at('LowerLeg.R_end')),.12)
+        self.assertGreater(rig.at('Foot.R')[1],.08)
+        head=head_point(.5)
+        self.assertAlmostEqual(head[1],F.FOREHEAD[1],delta=.04)
+        self.assertAlmostEqual(head[2],F.FOREHEAD[0],delta=.04)
 
     def test_rig_rendering_does_not_depend_on_procedural_fallback(self):
         from imposter_finder.analysis.fc_player_mesh import draw_player
