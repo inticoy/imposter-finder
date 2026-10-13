@@ -1,4 +1,4 @@
-"""FC 온라인 친구 리그 리포트: 친구전 10경기마다 순위표 · 맞대결 · 플레이 스타일.
+"""FC 온라인 친구 리그 리포트: 친구전 5경기마다 순위표 · 맞대결 · 플레이 스타일.
 
 사람마다 경기 수가 달라 승점 합계 대신 Elo로 순위를 매긴다 (모든 경기가 1:1 맞대결).
 축구 Elo처럼 골 차가 클수록 더 움직이고, 몰수 경기는 뺀다.
@@ -16,7 +16,7 @@ from imposter_finder.analysis.cards import PAD, SS, WIDTH, font, header, png, sp
 from imposter_finder.analysis.fc_report import BG, LABEL, TRACK, WHITE, Friend, goals, is_forfeit
 from imposter_finder.analysis.fc_xg import team_xg
 
-LEAGUE_EVERY = 10  # 친구전 이만큼 쌓이면 리그 리포트
+LEAGUE_EVERY = 5  # 친구전 이만큼 쌓이면 리그 리포트
 ELO_START, ELO_K = 1500, 16  # 같은 상대와 자주 붙어 K가 크면 몇 경기에 순위가 뒤집힌다 (30이면 20경기에 ±150)
 STYLE_MIN_GAMES = 5  # 플레이 스타일은 이 경기 수 이상만 (적으면 들쭉날쭉)
 UP, DOWN, SAME = (62, 207, 142), (239, 91, 91), (120, 126, 138)
