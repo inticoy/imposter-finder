@@ -14,6 +14,7 @@ from typing import Any
 from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
 from imposter_finder.analysis.cards import (PAD, SS, WIDTH, _download, emoji, font, header, icon, png, split_bar)
+from imposter_finder.analysis.fc_xg import team_xg
 from imposter_finder.games.fconline import FcMeta, FcPrices, FcTeamColors, face_image, format_bp, player_image
 
 # 축구 중계 톤: 거의 검정 바탕 + 두 팀의 엠블럼 색
@@ -556,6 +557,7 @@ def _stat_rows(l: dict, r: dict) -> list[tuple]:
     rows = [pair("점유율", lambda s: s["matchDetail"]["possession"], lambda v: f"{v}%"),
             pair("슈팅", lambda s: s["shoot"]["shootTotal"]),
             pair("유효 슈팅", lambda s: s["shoot"]["effectiveShootTotal"]),
+            pair("기대 득점 (xG)", team_xg, lambda v: f"{v:.1f}"),
             ("패스 성공률", l["pass"]["passSuccess"] / max(l["pass"]["passTry"], 1),
              _pct(l["pass"]["passSuccess"], l["pass"]["passTry"]),
              r["pass"]["passSuccess"] / max(r["pass"]["passTry"], 1), _pct(r["pass"]["passSuccess"], r["pass"]["passTry"])),
@@ -578,10 +580,23 @@ def _culprit(match: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
     return min(starters, key=lambda item: item[1]["status"]["spRating"])
 
 
+def _flow_or_shots(left: Team, right: Team, names: dict[int, str]) -> tuple:
+    """슈팅 리플레이 GIF. 실패하면 예전 슈팅맵 이미지."""
+    try:
+        from imposter_finder.analysis.fc_flow import render  # fc_flow가 이 모듈의 스타일을 가져다 쓴다
+        data = render(left, right, names)
+        monitoring.observe("fc.flow")
+        return "flow.gif", data, "image/gif"
+    except Exception as exc:
+        monitoring.error("fc.flow", exc, "FC 경기 흐름 GIF 실패 — 슈팅맵 이미지로 대체")
+        print(f"[fc] flow rendering failed: {exc}")
+        return "shots.png", render_shots(left, right)
+
+
 def build_report(match: dict[str, Any], head_to_head: list[dict[str, Any]], friends: dict[str, Friend],
                  meta: FcMeta, colors: FcTeamColors | None, gemini_api_key: str | None,
                  gemini_model: str, prices: FcPrices | None = None) -> tuple[dict[str, Any], list[tuple[str, bytes]]]:
-    """반환: (Components V2 payload, [(파일 이름, PNG)]). friends는 ouid → Friend."""
+    """반환: (Components V2 payload, [(파일 이름, 데이터[, 형식])]). friends는 ouid → Friend."""
     left, right = _teams(match, friends, colors)
     if prices:
         for team in (left, right):
@@ -613,12 +628,12 @@ def build_report(match: dict[str, Any], head_to_head: list[dict[str, Any]], frie
     files = [("score.png", render_scoreboard(left, right, scorers, _form(head_to_head, left.side["ouid"]))),
              ("potm.png", render_potm(cards, left, right)),
              ("stats.png", render_stats(_stat_rows(left.side, right.side), left, right)),
-             ("shots.png", render_shots(left, right)),
+             _flow_or_shots(left, right, names),
              ("lineup.png", render_lineup(left, right, meta, names, mvp["spId"], culprit["spId"]))]
 
     ai = _evaluate(left, right, cards, meta, gemini_api_key, gemini_model)
     mention_ids = [t.friend.discord_user_id for t in (left, right) if t.friend.discord_user_id]
-    components: list[dict] = [{"type": 12, "items": [{"media": {"url": f"attachment://{name}"}}]} for name, _ in files]
+    components: list[dict] = [{"type": 12, "items": [{"media": {"url": f"attachment://{name}"}}]} for name, *_ in files]
     words = []
     if ai.get("summary"):
         words.append(f"**총평**\n{ai['summary']}")
@@ -629,8 +644,9 @@ def build_report(match: dict[str, Any], head_to_head: list[dict[str, Any]], frie
     payload = {
         "flags": 32768,  # Components V2 (@silent는 전송할 때 붙는다)
         "allowed_mentions": {"users": mention_ids},
-        "components": [{"type": 10, "content": " ".join(f"<@{uid}>" for uid in mention_ids)},
-                       {"type": 17, "accent_color": ACCENT, "components": components}],
+        # 멘션 텍스트는 비어 있으면 디스코드가 거부한다
+        "components": ([{"type": 10, "content": " ".join(f"<@{uid}>" for uid in mention_ids)}] if mention_ids else [])
+                      + [{"type": 17, "accent_color": ACCENT, "components": components}],
     }
     return payload, files
 
@@ -649,6 +665,7 @@ def _evaluate(left: Team, right: Team, cards: list[dict], meta: FcMeta, api_key:
                 "팀컬러": team.team_name or "없음", "점유율": side["matchDetail"]["possession"],
                 "슈팅": sh["shootTotal"], "유효 슈팅": sh["effectiveShootTotal"], "박스 안 슈팅": sh["shootInPenalty"],
                 "박스 밖 슈팅": sh["shootOutPenalty"], "헤딩 슈팅": sh["shootHeading"],
+                "기대 득점(xG, 친구전 기준)": round(team_xg(side), 1),
                 "패스 성공률": _pct(ps["passSuccess"], ps["passTry"]),
                 "스루패스": f"{ps['throughPassSuccess']}/{ps['throughPassTry']}",
                 "태클": f"{side['defence']['tackleSuccess']}/{side['defence']['tackleTry']}",
