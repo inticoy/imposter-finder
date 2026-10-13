@@ -732,24 +732,11 @@ def build_report(platform: str, match: dict[str, Any], telemetry: list[dict[str,
     teams = sum(1 for x in match["included"] if x["type"] == "roster")
     story = build_story(match, telemetry, {v["pubg_name"] for v in scores.values()})
 
-    ranked = sorted(scores, key=lambda n: (-scores[n]["rating"], -participants[scores[n]["pubg_name"].lower()]["damageDealt"]))
+    ranked, squad_names = _squad_order(scores, participants, story)
     mvp = ranked[0] if ranked else None
     culprit = analysis.get("culprit") if len(ranked) > 1 else None
     if culprit == mvp:
         culprit = None
-
-    if story:
-        members = story.members
-        squad_names = [m.name for m in members]
-    else:
-        squad_names = [v["pubg_name"] for v in scores.values()]
-        members = []
-    ranked_pubg_names = [scores[name]["pubg_name"] for name in ranked]
-    ranked_keys = {name.casefold() for name in ranked_pubg_names}
-    squad_names = ranked_pubg_names + [name for name in squad_names if name.casefold() not in ranked_keys]
-    if story:
-        rank_by_nick = {name.casefold(): rank for rank, name in enumerate(squad_names)}
-        story.members.sort(key=lambda member: rank_by_nick.get(member.name.casefold(), len(rank_by_nick)))
     colors = {n: SQUAD[i % len(SQUAD)] for i, n in enumerate(squad_names)}
     stats = [participants.get(n.lower(), {}) for n in squad_names]
     place = int(stats[0].get("winPlace") or 0) if stats else 0
@@ -797,6 +784,48 @@ def build_report(platform: str, match: dict[str, Any], telemetry: list[dict[str,
     names = [n for n in (mvp, culprit) if n]
     ai = _evaluate(facts, names, gemini_api_key, gemini_model)
     return _payload([friends[n] for n in ranked if n in friends], place, files, ai), files
+
+
+def _squad_order(scores: dict, participants: dict, story: Story | None) -> tuple[list[str], list[str]]:
+    """(친구 순위, 스쿼드 닉네임 순서): 점수 순 친구, 그다음 친구 아닌 팀원. 스쿼드 색도 이 순서로 정한다."""
+    ranked = sorted(scores, key=lambda n: (-scores[n]["rating"], -participants[scores[n]["pubg_name"].lower()]["damageDealt"]))
+    squad_names = [m.name for m in story.members] if story else [v["pubg_name"] for v in scores.values()]
+    ranked_pubg_names = [scores[name]["pubg_name"] for name in ranked]
+    ranked_keys = {name.casefold() for name in ranked_pubg_names}
+    squad_names = ranked_pubg_names + [name for name in squad_names if name.casefold() not in ranked_keys]
+    if story:
+        rank_by_nick = {name.casefold(): rank for rank, name in enumerate(squad_names)}
+        story.members.sort(key=lambda member: rank_by_nick.get(member.name.casefold(), len(rank_by_nick)))
+    return ranked, squad_names
+
+
+def build_highlight(platform: str, match: dict[str, Any], telemetry: list[dict[str, Any]],
+                    registered: list[PubgPlayer]) -> tuple[dict, list[tuple]] | None:
+    """베스트 킬 3D GIF를 본 리포트 다음 메시지로 (본 메시지는 이미 GIF 두 개라 용량을 따로 쓴다).
+
+    친구가 사람을 못 잡았거나 팀 데스매치면 None.
+    """
+    from imposter_finder.analysis import pubg_highlight  # numpy가 필요한 무거운 모듈은 쓸 때만
+
+    attrs = match["data"]["attributes"]
+    if str(attrs.get("gameMode", "")).casefold() == "tdm" or not telemetry:
+        return None
+    scores = analyze_pubg_match(platform, match, telemetry, registered)["scores"]
+    if not scores:
+        return None
+    participants = {x["attributes"]["stats"]["name"].lower(): x["attributes"]["stats"]
+                    for x in match["included"] if x["type"] == "participant"}
+    story = build_story(match, telemetry, {v["pubg_name"] for v in scores.values()})
+    _, squad_names = _squad_order(scores, participants, story)
+    colors = {n: SQUAD[i % len(SQUAD)] for i, n in enumerate(squad_names)}
+    names = {v["pubg_name"]: name for name, v in scores.items()}  # 배그 닉네임 → 친구 이름
+    data = pubg_highlight.render(match, telemetry, names, colors, _pubg_map_name(attrs.get("mapName", "")))
+    if not data:
+        return None
+    files = [("highlight.gif", data, "image/gif")]
+    payload = {"flags": 32768, "components": [{"type": 17, "accent_color": ACCENT_WIN, "components": [
+        {"type": 12, "items": [{"media": {"url": "attachment://highlight.gif"}}]}]}]}
+    return payload, files
 
 
 def _tdm_rounds(duration: float, telemetry: list[dict], winner_id: int | None,

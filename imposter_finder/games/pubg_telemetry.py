@@ -198,6 +198,34 @@ def map_image(map_name: str) -> Image.Image:
     return im
 
 
+HI_PX, HI_TILE = 8192, 1024  # 하이라이트용 원본 해상도: 1024px 조각으로 나눠 캐시 (필요한 조각만 읽는다)
+
+
+def map_crop_hi(map_name: str, map_size: int, box: tuple[float, float, float, float]) -> Image.Image:
+    """8192px 원본에서 box(cm) 부분만. 처음 한 번 원본을 받아 64조각 JPEG로 data/assets/pubg/maps에 둔다."""
+    folder = ASSET_DIR / "pubg" / "maps" / f"{map_name}_{HI_PX}"
+    k = HI_PX / map_size
+    x0, y0, x1, y1 = (round(v * k) for v in box)
+    tiles = HI_PX // HI_TILE
+    span = lambda a, b: range(max(0, a // HI_TILE), min(tiles - 1, (b - 1) // HI_TILE) + 1)
+    need = [(i, j) for j in span(y0, y1) for i in span(x0, x1)]
+    if any(not (folder / f"{i}_{j}.jpg").exists() for i, j in need):
+        Image.MAX_IMAGE_PIXELS = None
+        full = Image.open(BytesIO(_download_uncached(f"{LFS}/Assets/Maps/{map_name}_Main_No_Text_High_Res.png")))
+        full = full.convert("RGB")
+        if full.width != HI_PX:
+            full = full.resize((HI_PX, HI_PX), Image.LANCZOS)
+        folder.mkdir(parents=True, exist_ok=True)
+        for j in range(tiles):
+            for i in range(tiles):
+                box_px = (i * HI_TILE, j * HI_TILE, (i + 1) * HI_TILE, (j + 1) * HI_TILE)
+                full.crop(box_px).save(folder / f"{i}_{j}.jpg", quality=90)
+    out = Image.new("RGB", (x1 - x0, y1 - y0))
+    for i, j in need:
+        out.paste(Image.open(folder / f"{i}_{j}.jpg").convert("RGB"), (i * HI_TILE - x0, j * HI_TILE - y0))
+    return out
+
+
 def _download_uncached(url: str) -> bytes:
     import urllib.request
     req = urllib.request.Request(url, headers={"User-Agent": "imposter-finder/0.1"})

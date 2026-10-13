@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import time
 
-from imposter_finder.analysis.lol_report import Friend, build_report
+from imposter_finder.analysis.lol_report import ACCENT_LOSE, ACCENT_WIN, Friend, build_report
 from imposter_finder.config import Settings
 from imposter_finder.discord import DiscordClient
 from imposter_finder.games.lol import DDragon, RiotApiError, RiotClient
@@ -80,4 +80,23 @@ def run_lol_cycle(settings: Settings, store: LocalStore, notify: bool) -> dict[s
             discord.send_with_files(thread_id, payload, files)
         store.mark_notification_done(PLATFORM, match_id, "sent")
         published += 1
+        _send_highlight(settings, discord, match, timeline, friends)
     return {"group_matches": len(group_ids), "published": published}
+
+
+def _send_highlight(settings: Settings, discord: DiscordClient, match: dict, timeline: dict | None,
+                    friends: dict[str, Friend]) -> None:
+    """친구 최고 교전 GIF를 리포트 바로 뒤에 따로 보낸다 (리포트와 합치면 디스코드 첨부 한도를 넘는다).
+    실패해도 리포트는 이미 갔으니 기록만 남긴다."""
+    try:
+        from imposter_finder.analysis.lol_highlight import build_highlight  # 지형 그림을 쓸 때만 불러온다
+        won = any(p["win"] for p in match["info"]["participants"] if p["puuid"] in friends)
+        highlight = build_highlight(match, timeline, friends, _ddragon, ACCENT_WIN if won else ACCENT_LOSE)
+        if highlight is None:
+            return
+        for thread_id in settings.discord_lol_thread_ids:
+            discord.send_with_files(thread_id, *highlight)
+        monitoring.observe("lol.highlight")
+    except Exception as exc:
+        monitoring.error("lol.highlight", exc, "하이라이트 GIF 실패 — 리포트는 보냄")
+        print(f"[lol] highlight failed {match['metadata']['matchId']}: {exc}")

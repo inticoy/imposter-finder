@@ -8,6 +8,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from imposter_finder.analysis.fc_highlight import build_highlight
 from imposter_finder.analysis.fc_league import LEAGUE_EVERY, build_league_report
 from imposter_finder.analysis.fc_report import Friend, build_forfeit_report, build_report, is_forfeit
 from imposter_finder.config import ROOT_DIR, Settings
@@ -96,10 +97,26 @@ def run_fc_cycle(settings: Settings, store: LocalStore, notify: bool) -> dict[st
                                           settings.gemini_model, _prices)
             for thread_id in settings.discord_fc_thread_ids:
                 discord.send_with_files(thread_id, payload, files)
+            _send_highlight(settings, discord, match, friends)
         store.mark_notification_done(PLATFORM, match_id, "sent")
         published += 1
     league = _publish_league(settings, store, discord, friends) if notify else 0
     return {"friend_matches": len(friend_matches), "published": published, "league": league}
+
+
+def _send_highlight(settings: Settings, discord: DiscordClient, match: dict[str, Any], friends: dict[str, Friend]) -> None:
+    """리포트 바로 다음 메시지로 베스트 골 3D 리플레이. 리포트 파일들과 합치면 디스코드 한도(10MiB)를 넘을 수 있어 따로 보낸다.
+    실패해도 리포트는 이미 갔으니 기록만 남긴다."""
+    highlight = build_highlight(match, friends, _meta, _colors)
+    if highlight is None:
+        return
+    payload, files = highlight
+    for thread_id in settings.discord_fc_thread_ids:
+        try:
+            discord.send_with_files(thread_id, payload, files)
+        except Exception as exc:
+            monitoring.error("fc.highlight", exc, "FC 베스트 골 전송 실패 — 리포트는 그대로")
+            print(f"[fc] highlight send failed: {exc}")
 
 
 def _publish_league(settings: Settings, store: LocalStore, discord: DiscordClient, friends: dict[str, Friend]) -> int:
