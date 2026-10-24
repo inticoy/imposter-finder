@@ -66,7 +66,7 @@ def observe(component: str, severity: str = "ok", code: str = "ok", summary: str
     if previous and _severity[previous["severity"]] > _severity[severity]:
         return
     _events[component] = dict(component=component, severity=severity, code=code,
-        summary=redact(summary, 350), hint=hint, log=redact(log), observed_at=int(time.time()*1000))
+        summary=redact(summary, 350), hint=redact(hint, 250), log=redact(log), observed_at=int(time.time()*1000))
 
 
 def error(component: str, exc: BaseException, summary: str, hint: str = "실행 로그와 설정 확인", severity: str = "degraded") -> None:
