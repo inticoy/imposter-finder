@@ -1,3 +1,4 @@
+import json
 import sqlite3
 import tempfile
 import unittest
@@ -79,3 +80,16 @@ class BackupTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SqlErrorAsHttp400(unittest.TestCase):
+    def test_missing_table_is_a_runtime_error(self):
+        import io
+        import urllib.error
+        from unittest import mock
+        from imposter_finder.backup import D1
+        body = io.BytesIO(json.dumps({"success": False, "errors": [{"message": "no such table"}]}).encode())
+        error = urllib.error.HTTPError("https://d1", 400, "Bad Request", {}, body)
+        with mock.patch("urllib.request.urlopen", side_effect=error):
+            with self.assertRaises(RuntimeError):
+                D1("t", "a", "d").query("SELECT COUNT(*) AS n FROM game_bootstraps")

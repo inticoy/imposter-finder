@@ -16,6 +16,7 @@ import json
 import os
 import sqlite3
 import sys
+import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any
@@ -38,8 +39,14 @@ class D1:
         body = json.dumps({"sql": sql, "params": params or []}).encode()
         req = urllib.request.Request(self.url, data=body, method="POST", headers={
             "Authorization": f"Bearer {self.token}", "Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            data = json.load(resp)
+        try:
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                data = json.load(resp)
+        except urllib.error.HTTPError as exc:
+            # 없는 표 같은 SQL 오류는 400으로 온다: 응답 본문의 오류로 RuntimeError를 낸다
+            if exc.code != 400:
+                raise
+            data = json.load(exc)
         if not data.get("success"):
             raise RuntimeError(f"D1 query failed: {data.get('errors')}")
         return data["result"][0].get("results", [])
