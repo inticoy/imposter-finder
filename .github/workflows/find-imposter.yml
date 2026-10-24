@@ -21,6 +21,7 @@ jobs:
     env:
       MONITOR_ENDPOINT: ${{ secrets.MONITOR_ENDPOINT }}
       MONITOR_TOKEN: ${{ secrets.MONITOR_TOKEN }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }} # .env보다 우선
       MONITOR_SERVICE: imposter-finder
       HEALTHCHECK_URL: ${{ secrets.HEALTHCHECK_URL }}
       MONITOR_ENABLED_GAMES: pubg,fc,lol # TFT intentionally disabled until key approval
