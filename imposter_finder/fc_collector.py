@@ -57,6 +57,8 @@ def run_fc_cycle(settings: Settings, store: LocalStore, notify: bool) -> dict[st
         except NexonQuotaExceeded:
             raise
         except NexonApiError as exc:
+            if not notify:
+                raise
             monitoring.error("fc.accounts", exc, "일부 FC 계정 조회 실패", "Nexon 키 또는 등록 계정 확인")
             # 닉네임 변경 등으로 한 명이 실패해도 나머지는 계속한다
             print(f"[fc] skip {player.name}: {exc}")
@@ -91,16 +93,18 @@ def run_fc_cycle(settings: Settings, store: LocalStore, notify: bool) -> dict[st
         if is_forfeit(match):
             payload = build_forfeit_report(match, head_to_head, friends)
             for thread_id in settings.discord_fc_thread_ids:
-                discord.send_message(thread_id, payload)
+                discord.send_message(thread_id, payload, report_id=f"{PLATFORM}:{match_id}")
         else:
             payload, files = build_report(match, head_to_head, friends, _meta, _colors, settings.gemini_api_key,
                                           settings.gemini_model, _prices)
             payload, files = with_highlight(payload, files, _highlight(match, friends))
             for thread_id in settings.discord_fc_thread_ids:
-                discord.send_with_files(thread_id, payload, files)
+                discord.send_with_files(thread_id, payload, files, report_id=f"{PLATFORM}:{match_id}")
         store.mark_notification_done(PLATFORM, match_id, "sent")
         published += 1
     league = _publish_league(settings, store, discord, friends) if notify else 0
+    if not notify:
+        store.mark_bootstrap_complete("fc")
     return {"friend_matches": len(friend_matches), "published": published, "league": league}
 
 
@@ -129,7 +133,7 @@ def _publish_league(settings: Settings, store: LocalStore, discord: DiscordClien
         history = [m for m in store.fc_matches() if m["matchDate"] <= window[-1]["matchDate"]]
         payload, files = build_league_report(history, window, friends)
         for thread_id in settings.discord_fc_thread_ids:
-            discord.send_with_files(thread_id, payload, files)
+            discord.send_with_files(thread_id, payload, files, report_id=f"{LEAGUE}:{window[-1]['matchId']}")
         monitoring.observe("fc.league")
     except Exception as exc:
         monitoring.error("fc.league", exc, "FC 리그 리포트 실패 — 다음 실행에서 다시 시도")

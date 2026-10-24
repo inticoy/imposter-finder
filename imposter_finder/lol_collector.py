@@ -41,6 +41,8 @@ def run_lol_cycle(settings: Settings, store: LocalStore, notify: bool) -> dict[s
                 seen_by.setdefault(match_id, set()).add(account.name)
             monitoring.observe("lol.accounts")
         except RiotApiError as exc:
+            if not notify:
+                raise
             monitoring.error("lol.accounts", exc, "일부 롤 계정 조회 실패", "Riot 키 또는 등록 계정 확인")
             print(f"[lol] skip {account.riot_id}: {exc}")  # 닉네임 변경 등은 그 계정만 건너뛴다
 
@@ -78,9 +80,11 @@ def run_lol_cycle(settings: Settings, store: LocalStore, notify: bool) -> dict[s
         payload, files = build_report(match, timeline, friends, _ddragon, settings.gemini_api_key, settings.gemini_model)
         payload, files = with_highlight(payload, files, _highlight(match, timeline, friends))
         for thread_id in settings.discord_lol_thread_ids:
-            discord.send_with_files(thread_id, payload, files)
+            discord.send_with_files(thread_id, payload, files, report_id=f"{PLATFORM}:{match_id}")
         store.mark_notification_done(PLATFORM, match_id, "sent")
         published += 1
+    if not notify:
+        store.mark_bootstrap_complete("lol")
     return {"group_matches": len(group_ids), "published": published}
 
 

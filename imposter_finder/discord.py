@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import urllib.error
 import urllib.request
@@ -16,6 +17,13 @@ SUPPRESS_NOTIFICATIONS = 1 << 12
 def _silent(payload: dict) -> dict:
     """봇 리포트는 모두 @silent: 태그는 남지만 푸시 알림은 가지 않는다."""
     return payload | {"flags": payload.get("flags", 0) | SUPPRESS_NOTIFICATIONS}
+
+
+def _idempotent(payload: dict, channel_id: str, report_id: str | None) -> dict:
+    if report_id is None:
+        return payload
+    nonce = hashlib.sha256(f"{channel_id}:{report_id}".encode()).hexdigest()[:24]
+    return payload | {"nonce": nonce, "enforce_nonce": True}
 
 
 def with_highlight(payload: dict, files: list[tuple], highlight: tuple[dict, list[tuple]] | None) -> tuple[dict, list[tuple]]:
@@ -54,21 +62,23 @@ class DiscordClient:
             raw = exc.read().decode("utf-8", errors="replace")
             raise DiscordError(f"Discord HTTP {exc.code}: {raw[:500]}") from exc
 
-    def send_message(self, channel_id: str, payload: dict) -> None:
+    def send_message(self, channel_id: str, payload: dict, *, report_id: str | None = None) -> None:
         """파일 없는 메시지 (FC 몰수 경기 한 줄 등)."""
-        self._request_json("POST", f"https://discord.com/api/v10/channels/{channel_id}/messages", _silent(payload))
+        self._request_json("POST", f"https://discord.com/api/v10/channels/{channel_id}/messages",
+                           _silent(_idempotent(payload, channel_id, report_id)))
 
     def send_with_file(self, channel_id: str, payload: dict, filename: str, data: bytes,
-                       content_type: str = "image/png") -> dict | None:
+                       content_type: str = "image/png", *, report_id: str | None = None) -> dict | None:
         """Post a message payload with one attached file."""
-        return self.send_with_files(channel_id, payload, [(filename, data, content_type)])
+        return self.send_with_files(channel_id, payload, [(filename, data, content_type)], report_id=report_id)
 
-    def send_with_files(self, channel_id: str, payload: dict, files: list[tuple]) -> dict | None:
+    def send_with_files(self, channel_id: str, payload: dict, files: list[tuple], *,
+                        report_id: str | None = None) -> dict | None:
         """Post a message payload with attached files (multipart/form-data).
 
         files: [(filename, bytes) | (filename, bytes, content_type)]. payload의 attachment://filename으로 참조한다.
         """
-        payload = _silent(payload) | {"attachments": [{"id": n, "filename": f[0]} for n, f in enumerate(files)]}
+        payload = _silent(_idempotent(payload, channel_id, report_id)) | {"attachments": [{"id": n, "filename": f[0]} for n, f in enumerate(files)]}
         boundary = f"----imposterfinder{uuid.uuid4().hex}"
         parts = [
             f"--{boundary}\r\nContent-Disposition: form-data; name=\"payload_json\"\r\n"

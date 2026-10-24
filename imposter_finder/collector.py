@@ -61,6 +61,8 @@ def run_collection_cycle(settings: Settings, store: LocalStore, notify: bool) ->
         _send_image_report(settings, platform, match, telemetry, registered)
         store.mark_notification_done(platform, match_id, "sent")
         published += 1
+    if not notify:
+        store.mark_bootstrap_complete("pubg")
     return {"matches": len(fetched), "published": published}
 
 
@@ -71,7 +73,7 @@ def _send_image_report(settings: Settings, platform: str, match: dict[str, Any],
     payload, files = with_highlight(payload, files, _highlight(platform, match, telemetry, registered))
     discord = DiscordClient(settings.discord_bot_token or "")
     for thread_id in settings.discord_pubg_thread_ids:
-        discord.send_with_files(thread_id, payload, files)
+        discord.send_with_files(thread_id, payload, files, report_id=f"pubg:{platform}:{match['data']['id']}")
 
 
 def _highlight(platform: str, match: dict[str, Any], telemetry: list[dict[str, Any]],

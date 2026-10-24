@@ -44,6 +44,38 @@ class BackupTests(unittest.TestCase):
             self.assertEqual(back.fc_ouid("건우"), "a")
             back.close()
 
+    def test_bootstrap_markers_round_trip_and_legacy_restore(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            src, restored = Path(tmp, "src.db"), Path(tmp, "restored.db")
+            store = LocalStore(src)
+            store.mark_bootstrap_complete("pubg")  # 경기 없는 성공한 초기 수집도 보존
+            store.upsert_fc_match({"matchId": "m1", "matchType": 40, "matchDate": "2026-10-01T00:00:00"})
+            store.mark_notification_done("fconline", "m1", "bootstrap")
+            store.close()
+            remote = FakeD1()
+            push(src, remote)
+            pull(restored, remote)
+            store = LocalStore(restored)
+            self.assertTrue(store.bootstrap_complete("pubg"))
+            self.assertFalse(store.bootstrap_complete("fc"))  # 부분 수집은 알림이 있어도 승격하지 않는다
+            store.close()
+
+            remote.query("DROP TABLE game_bootstraps")
+            query = remote.query
+
+            def legacy_query(sql, params=None):
+                try:
+                    return query(sql, params)
+                except sqlite3.OperationalError as exc:
+                    raise RuntimeError(str(exc)) from exc  # D1의 없는 표 오류
+
+            remote.query = legacy_query
+            pull(restored, remote)
+            store = LocalStore(restored)
+            self.assertFalse(store.bootstrap_complete("pubg"))
+            self.assertTrue(store.bootstrap_complete("fc"))
+            store.close()
+
 
 if __name__ == "__main__":
     unittest.main()

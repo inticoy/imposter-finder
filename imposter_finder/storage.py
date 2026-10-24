@@ -20,6 +20,10 @@ class LocalStore:
             self._connection.executescript(
                 """
                 PRAGMA journal_mode=WAL;
+                CREATE TABLE IF NOT EXISTS game_bootstraps (
+                    game TEXT PRIMARY KEY,
+                    complete INTEGER NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS matches (
                     platform TEXT NOT NULL,
                     match_id TEXT NOT NULL,
@@ -98,6 +102,24 @@ class LocalStore:
                 );
                 """
             )
+            # 기존 DB만 이관한다. 미완료 행도 남겨 재시작 때 부분 수집을 완료로 오인하지 않는다.
+            for game, table, platform in (("pubg", "matches", None), ("fc", "fc_matches", "fconline"),
+                                          ("lol", "lol_matches", "lol"), ("tft", "tft_matches", "tft")):
+                join = "n.platform = m.platform" if platform is None else "n.platform = ?"
+                self._connection.execute(
+                    f"INSERT OR IGNORE INTO game_bootstraps(game, complete) VALUES (?, EXISTS("
+                    f"SELECT 1 FROM {table} m JOIN match_notifications n ON n.match_id = m.match_id AND {join}))",
+                    (game,) if platform is None else (game, platform))
+            self._connection.commit()
+
+    def bootstrap_complete(self, game: str) -> bool:
+        with self._lock:
+            row = self._connection.execute("SELECT complete FROM game_bootstraps WHERE game = ?", (game,)).fetchone()
+        return bool(row and row["complete"])
+
+    def mark_bootstrap_complete(self, game: str) -> None:
+        with self._lock:
+            self._connection.execute("INSERT OR REPLACE INTO game_bootstraps(game, complete) VALUES (?, 1)", (game,))
             self._connection.commit()
 
     def upsert_match(self, platform: str, match: dict[str, Any]) -> bool:
@@ -147,7 +169,7 @@ class LocalStore:
             ).fetchone() is not None
 
     def has_matches(self) -> bool:
-        """Whether this local service has completed an initial history import."""
+        """Whether any PUBG matches are stored."""
         with self._lock:
             return self._connection.execute("SELECT 1 FROM matches LIMIT 1").fetchone() is not None
 

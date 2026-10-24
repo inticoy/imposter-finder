@@ -146,10 +146,7 @@ def _load_report(client: PubgClient, player: PubgPlayer, match_count: int, store
 
 async def _collection_loop(settings: Settings, store: LocalStore) -> None:
     """Bootstrap quietly, then publish new group matches every configured interval."""
-    # Only a brand-new database needs a quiet import. On a restart, existing
-    # history means any unprocessed recent match occurred while we were away
-    # and should still receive its normal report.
-    first_cycle = not store.has_matches()
+    first_cycle = not store.bootstrap_complete("pubg")
     while True:
         try:
             result = await asyncio.to_thread(run_collection_cycle, settings, store, not first_cycle)
@@ -166,7 +163,7 @@ async def _collection_loop(settings: Settings, store: LocalStore) -> None:
 
 async def _fc_loop(settings: Settings, store: LocalStore) -> None:
     """FC 친구전: 첫 실행은 보이는 경기를 저장만 하고, 이후 주기마다 새 경기를 리포트한다."""
-    first_cycle = not store.has_fc_matches()
+    first_cycle = not store.bootstrap_complete("fc")
     while True:
         try:
             result = await asyncio.to_thread(run_fc_cycle, settings, store, not first_cycle)
@@ -181,7 +178,7 @@ async def _fc_loop(settings: Settings, store: LocalStore) -> None:
 
 async def _lol_loop(settings: Settings, store: LocalStore) -> None:
     """롤 친구 경기: 첫 실행은 저장만 하고, 이후 주기마다 새 경기를 리포트한다."""
-    first_cycle = not store.has_lol_matches()
+    first_cycle = not store.bootstrap_complete("lol")
     while True:
         try:
             result = await asyncio.to_thread(run_lol_cycle, settings, store, not first_cycle)
@@ -197,7 +194,7 @@ async def _lol_loop(settings: Settings, store: LocalStore) -> None:
 
 async def _tft_loop(settings: Settings, store: LocalStore) -> None:
     """TFT 친구 로비: 첫 실행은 저장만 하고, 이후 주기마다 새 경기를 리포트한다."""
-    first_cycle = not store.has_tft_matches()
+    first_cycle = not store.bootstrap_complete("tft")
     while True:
         try:
             result = await asyncio.to_thread(run_tft_cycle, settings, store, not first_cycle)

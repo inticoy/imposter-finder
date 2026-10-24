@@ -40,6 +40,8 @@ def run_tft_cycle(settings: Settings, store: LocalStore, notify: bool) -> dict[s
                 seen_by.setdefault(match_id, set()).add(account.name)
             monitoring.observe("tft.accounts")
         except RiotApiError as exc:
+            if not notify:
+                raise
             monitoring.error("tft.accounts", exc, "일부 TFT 계정 조회 실패", "TFT 키 승인·유효기간 확인")
             print(f"[tft] skip {account.riot_id}: {exc}")  # 닉네임 변경 등은 그 계정만 건너뛴다
 
@@ -86,9 +88,11 @@ def run_tft_cycle(settings: Settings, store: LocalStore, notify: bool) -> dict[s
         ranked = match["info"].get("queue_id") in RANKED_QUEUES
         payload, files = build_report(match, in_match, tiers if ranked else {}, settings.gemini_api_key, settings.gemini_model)
         for thread_id in settings.discord_tft_thread_ids:
-            discord.send_with_files(thread_id, payload, files)
+            discord.send_with_files(thread_id, payload, files, report_id=f"{PLATFORM}:{match_id}")
         store.mark_notification_done(PLATFORM, match_id, "sent")
         published += 1
     for puuid, rank in ranks.items():
         store.set_tft_rank(puuid, rank)
+    if not notify:
+        store.mark_bootstrap_complete("tft")
     return {"group_matches": len(group_ids), "published": published}

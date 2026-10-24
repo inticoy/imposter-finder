@@ -57,7 +57,7 @@ def _tables(db: sqlite3.Connection) -> dict[str, tuple[str, list[str], list[str]
 
 
 def _mutable(cols: list[str], table: str) -> bool:
-    return "updated_at" in cols or table == "api_usage"
+    return "updated_at" in cols or table in {"api_usage", "game_bootstraps"}
 
 
 def _insert(remote: D1, table: str, cols: list[str], rows: list[tuple]) -> None:
@@ -100,6 +100,8 @@ def pull(db_path: Path, remote: D1) -> dict[str, int]:
         leftover.unlink(missing_ok=True)
     LocalStore(temp).close()  # 표를 만든다
     db = sqlite3.connect(temp)
+    # 구버전 백업은 복원된 경기·알림 내역으로 최초 실행 때 이관한다.
+    db.execute("DELETE FROM game_bootstraps")
     got = {}
     for table, (_, cols, keys) in _tables(db).items():
         try:

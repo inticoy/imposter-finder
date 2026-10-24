@@ -64,6 +64,7 @@ class LeagueTriggerTests(unittest.TestCase):
             play(1)
             self.assertEqual(_publish_league(settings, store, discord, FRIENDS), 1)
             discord.send_with_files.assert_called_once()
+            self.assertEqual(discord.send_with_files.call_args.kwargs["report_id"], f"{LEAGUE}:m{3 + LEAGUE_EVERY:03d}")
             self.assertEqual(store.last_notification(LEAGUE), f"m{3 + LEAGUE_EVERY:03d}")
             store.close()
 

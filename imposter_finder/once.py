@@ -81,10 +81,10 @@ def run_once(settings: Settings) -> int:
     monitoring.begin(words)
     sys.stdout, sys.stderr = Redacted(sys.stdout, words), Redacted(sys.stderr, words)
     store = LocalStore(settings.local_database_path)
-    jobs = [("pubg", run_collection_cycle, store.has_matches, bool(settings.discord_pubg_thread_ids)),
-            ("fc", run_fc_cycle, store.has_fc_matches, bool(settings.nexon_api_key and settings.discord_fc_thread_ids)),
-            ("lol", run_lol_cycle, store.has_lol_matches, bool(settings.riot_api_key and settings.discord_lol_thread_ids)),
-            ("tft", run_tft_cycle, store.has_tft_matches,
+    jobs = [("pubg", run_collection_cycle, bool(settings.discord_pubg_thread_ids)),
+            ("fc", run_fc_cycle, bool(settings.nexon_api_key and settings.discord_fc_thread_ids)),
+            ("lol", run_lol_cycle, bool(settings.riot_api_key and settings.discord_lol_thread_ids)),
+            ("tft", run_tft_cycle,
              bool(settings.riot_tft_api_key and settings.discord_tft_thread_ids))]
     failed = False
     expected = set(os.environ.get("MONITOR_ENABLED_GAMES", "pubg,fc,lol").split(","))
@@ -100,7 +100,7 @@ def run_once(settings: Settings) -> int:
         monitoring.observe("gemini.config", "degraded", "missing-key", "AI 경기 평가 키 누락", "ENV_FILE의 GEMINI_API_KEY 확인")
     else:
         monitoring.observe("gemini.config")
-    for name, cycle, has_data, enabled in jobs:
+    for name, cycle, enabled in jobs:
         if os.environ.get("MONITOR_ENABLED_GAMES") is not None and name not in expected:
             print(f"[{name}] intentionally disabled")
             monitoring.observe(name + ".config", "disabled", "intentional", "운영 설정에서 의도적으로 비활성화")
@@ -111,8 +111,8 @@ def run_once(settings: Settings) -> int:
                 monitoring.observe(name + ".config", "degraded", "missing-config", "운영 대상 게임의 API 키 또는 스레드 설정 누락", "ENV_FILE의 게임 키와 DISCORD_THREAD_*_PROD 확인")
             continue
         monitoring.observe(name + ".config")
-        # 저장된 기록이 없으면(캐시가 사라졌을 때도) 이번 경기들은 올리지 않고 기록만 한다: 중복 리포트 방지
-        bootstrap = not has_data()
+        # 초기 수집이 완료되지 않았으면(캐시가 사라졌을 때도) 이번 경기들은 올리지 않고 기록만 한다: 중복 리포트 방지
+        bootstrap = not store.bootstrap_complete(name)
         try:
             result = cycle(settings, store, not bootstrap)
             monitoring.observe(name + ".cycle")
