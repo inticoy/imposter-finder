@@ -46,7 +46,7 @@ jobs:
           path: |
             data/imposter_finder.db
             data/fc_meta
-          key: state-${{ github.run_id }}
+          key: state-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: state-
 
       # 캐시가 지워졌으면 D1 백업에서 이어 받는다. 넥슨·라이엇은 최근 기록만 다시 주니 통산 기록을 지킨다
@@ -77,6 +77,11 @@ jobs:
           PYTHONUNBUFFERED: "1"
         run: python -m imposter_finder collect
 
+      # WAL에만 남은 기록까지 DB 파일 하나로 합친 뒤 저장한다 (캐시는 .db 파일만 담는다)
+      - name: Checkpoint state
+        if: always() && hashFiles('data/imposter_finder.db') != ''
+        run: python -c "import sqlite3; db = sqlite3.connect('data/imposter_finder.db'); db.execute('PRAGMA wal_checkpoint(TRUNCATE)'); db.close()"
+
       - name: Save state
         if: always()
         uses: actions/cache/save@v6
@@ -84,7 +89,7 @@ jobs:
           path: |
             data/imposter_finder.db
             data/fc_meta
-          key: state-${{ github.run_id }}
+          key: state-${{ github.run_id }}-${{ github.run_attempt }}
 
       # 로컬에만 있는 행을 D1에 더한다 (지우지 않아 빈 DB로 돌아도 백업은 안전하다)
       - name: Back up records to D1

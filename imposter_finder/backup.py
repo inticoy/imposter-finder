@@ -94,8 +94,12 @@ def push(db_path: Path, remote: D1) -> dict[str, int]:
 
 
 def pull(db_path: Path, remote: D1) -> dict[str, int]:
-    LocalStore(db_path).close()  # 표를 만든다
-    db = sqlite3.connect(db_path)
+    # 임시 파일에 다 받은 뒤에만 바꿔 넣는다: 중간에 끊긴 DB가 캐시되면 다음 실행이 그걸 진짜로 믿는다
+    temp = db_path.with_name(db_path.name + ".restoring")
+    for leftover in (temp, Path(f"{temp}-wal"), Path(f"{temp}-shm")):
+        leftover.unlink(missing_ok=True)
+    LocalStore(temp).close()  # 표를 만든다
+    db = sqlite3.connect(temp)
     got = {}
     for table, (_, cols, keys) in _tables(db).items():
         try:
@@ -110,7 +114,9 @@ def pull(db_path: Path, remote: D1) -> dict[str, int]:
                            [tuple(r[c] for c in cols) for r in rows])
         db.commit()
         got[table] = total
+    db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
     db.close()
+    os.replace(temp, db_path)
     return got
 
 
