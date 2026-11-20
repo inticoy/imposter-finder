@@ -9,11 +9,11 @@ from typing import Any
 
 from io import BytesIO
 
-from PIL import Image, ImageChops, ImageDraw
+from PIL import Image, ImageChops, ImageDraw, ImageFont
 
-from imposter_finder.analysis.cards import (ALLY, BG, DEFEAT, ENEMY, GIF_MAX_BYTES, GOLD, HIGHLIGHT, LABEL, PAD,
-                                            SLATE, SS, TRACK, VICTORY, WHITE, WIDTH, _download, ambient_bg, backdrop,
-                                            bar, canvas, edge_shadow, font, gif, glass, header, icon, medallion, pill, png,
+from imposter_finder.analysis.cards import (ALLY, BG, ENEMY, GIF_MAX_BYTES, GOLD, LABEL, PAD,
+                                            SLATE, SS, TRACK, WHITE, WIDTH, _download, ambient_bg, backdrop,
+                                            bar, canvas, edge_shadow, font, gif, glass, header, icon, medallion, png,
                                             shade, split_bar)
 from imposter_finder.games.lol import ARENA_QUEUES, QUEUE_NAMES, DDragon, opgg_link
 
@@ -88,13 +88,47 @@ def _scores(participants: list[dict], minutes: float) -> dict[str, dict]:
 
 
 # ── 이미지 ──────────────────────────────────────────────
+REPORT_VICTORY = (112, 218, 209)
+REPORT_GOLD = (248, 197, 77)
+REPORT_CORAL = (255, 118, 130)
+REPORT_TEAM_BLUE = (126, 173, 200)
+
+
+def _report_text(draw: ImageDraw.ImageDraw, xy: tuple[float, float], text: str,
+                 face: ImageFont.FreeTypeFont, color: tuple, anchor: str = "la") -> None:
+    # Give Hangul a little room while leaving complex names to Pillow's text shaping.
+    if not any("가" <= char <= "힣" for char in text) or not all(
+            char.isascii() or char == "·" or "가" <= char <= "힣" for char in text):
+        draw.text(xy, text, font=face, fill=color, anchor=anchor)
+        return
+
+    x, y = xy
+    advances = [face.getlength(char) for char in text]
+    width = sum(advances) + len(text) - 1
+    if anchor == "ma":
+        x -= width / 2
+    elif anchor == "ra":
+        x -= width
+    for char, advance in zip(text, advances):
+        draw.text((x, y), char, font=face, fill=color, anchor="la")
+        x += advance + 1
+
+
+def _report_badge(draw: ImageDraw.ImageDraw, cx: float, top: int, text: str, color: tuple) -> None:
+    face = font(19, 7)
+    half_width = max(34, face.getlength(text) / 2 + 13)
+    draw.rounded_rectangle((cx - half_width, top, cx + half_width, top + 29),
+                           radius=15, fill=color)
+    draw.text((cx, top + 14), text, font=face, fill=BG, anchor="mm")
+
+
 def render_banner(won: bool, mode: str, minutes: int, background: str | None,
                   left: dict, right: dict | None) -> bytes:
     """스코어보드형 결과 배너. 가운데 승패, 왼쪽 우리 팀, 오른쪽 상대 팀.
 
     left/right: {"label", "kills", "gold", "icons": [(url, is_friend)]}. right가 None이면 왼쪽만 (아레나).
     """
-    height = 190
+    height = 210
     img, dr = canvas(height)
     if background:  # MVP 챔피언 원화를 어둡게 깔아 중계 화면처럼
         try:
@@ -105,34 +139,36 @@ def render_banner(won: bool, mode: str, minutes: int, background: str | None,
             img.paste(Image.blend(art, Image.new("RGB", art.size, BG), 0.72))
         except Exception:
             pass
-    color = VICTORY if won else DEFEAT
+    color = REPORT_VICTORY if won else REPORT_CORAL
     cx = WIDTH // 2
 
     # 가운데: 승패 · 모드
     word = "승리" if won else "패배"
-    dr.text((cx, 38), word, font=font(64, 6), fill=color, anchor="ma")
-    dr.text((cx, 120), f"{mode} · {minutes}분", font=font(22, 4), fill=WHITE, anchor="ma")
+    _report_text(dr, (cx, 40), word, font(64, 7), color, "ma")
+    _report_text(dr, (cx, 134), f"{mode} · {minutes}분", font(23, 6), WHITE, "ma")
 
     def side(info: dict, align: str) -> None:
         sign = -1 if align == "left" else 1
         edge = PAD if align == "left" else WIDTH - PAD
         anchor = "la" if align == "left" else "ra"
-        dr.text((edge, 20), info["label"], font=font(18), fill=ALLY if align == "left" else ENEMY, anchor=anchor)
+        team_color = REPORT_TEAM_BLUE if align == "left" else REPORT_CORAL
+        _report_text(dr, (edge, 20), info["label"], font(20, 6), team_color, anchor)
         if info.get("kills") is not None:
-            dr.text((edge, 44), str(info["kills"]), font=font(46, 6), fill=WHITE, anchor=anchor)
-            kills_w = dr.textlength(str(info["kills"]), font=font(46, 6))
-            gx = edge + (kills_w + 16) * (-sign)
-            dr.text((gx, 52), "킬", font=font(16), fill=LABEL, anchor=anchor)
+            dr.text((edge, 51), str(info["kills"]), font=font(46, 7), fill=WHITE, anchor=anchor)
+            kills_w = dr.textlength(str(info["kills"]), font=font(46, 7))
+            gx = edge + (kills_w + 22) * (-sign)
+            _report_text(dr, (gx, 55), "킬", font(18, 6), LABEL, anchor)
             if info.get("gold"):
-                dr.text((gx, 74), f"{info['gold'] / 1000:.1f}k 골드", font=font(16), fill=GOLD, anchor=anchor)
-        size, gap = 42, 6
+                _report_text(dr, (gx, 82), f"{info['gold'] / 1000:.1f}k 골드", font(18, 6), REPORT_GOLD, anchor)
+        size, gap, icon_top = 42, 8, 136
         for n, (url, is_friend) in enumerate(info["icons"]):
             x = edge + n * (size + gap) if align == "left" else edge - size - n * (size + gap)
-            champ = icon(url, size, radius=8)
+            champ = icon(url, size, radius=7)
             if champ:
-                img.paste(champ, (int(x), 120), champ)
+                img.paste(champ, (int(x), icon_top), champ)
             if is_friend:
-                dr.rounded_rectangle((x - 2, 118, x + size + 1, 120 + size + 1), radius=10, outline=HIGHLIGHT, width=2)
+                dr.rounded_rectangle((x - 2, icon_top - 2, x + size + 1, icon_top + size + 1),
+                                     radius=9, outline=REPORT_GOLD, width=2)
 
     side(left, "left")
     if right:
@@ -142,41 +178,55 @@ def render_banner(won: bool, mode: str, minutes: int, background: str | None,
 
 def render_players(columns: list[dict], rows: list[tuple], background: str | None) -> bytes:
     """라벨 칸 + 친구 칸을 같은 폭으로. 친구 칸마다 챔피언 로딩 원화."""
-    head_h, row_h = 200, 54
+    head_h, row_h = 224, 60
     height = head_h + row_h * len(rows) + 12
     img, dr = canvas(height)
     col_w = WIDTH / (len(columns) + 1)
     ambient_bg(img, background, (0, 0, round(col_w), height), dim=min(AMBIENT_DIM + 0.05, 1))  # 라벨 칸: MVP 원화 색감
-    dr.text((24, 96), "선수 비교", font=font(22, 6), fill=WHITE)
-    dr.text((24, 128), "점수 높은 순", font=font(15), fill=LABEL)
     for c, col in enumerate(columns):
         x0, x1 = round((c + 1) * col_w), round((c + 2) * col_w)  # 칸 사이 틈 없이
         backdrop(img, col.get("art_url"), (x0, 0, x1, height), dim=0.66, focus_y=0.1, fade=0.75)
+    # Keep the splash art bright around the portraits and improve contrast under the stats.
+    fade_start = 175
+    mask = Image.new("L", (1, height))
+    for y in range(fade_start, height):
+        mask.putpixel((0, y), round(90 * min(1, (y - fade_start) / 100)))
+    img.paste(BG, (0, 0, WIDTH, height), mask.resize(img.size))
     for c in range(len(columns)):  # 칸 경계는 선 대신 그늘
         edge_shadow(img, round((c + 1) * col_w), height)
+    _report_text(dr, (24, 104), "선수 비교", font(22, 7), WHITE)
+    _report_text(dr, (24, 140), "점수 높은 순", font(15, 6), LABEL)
     for c, col in enumerate(columns):
         cx = int((c + 1.5) * col_w)
-        color = HIGHLIGHT if col["badge"] in {"MVP", "ACE"} else DEFEAT if col["badge"] == "범인" else WHITE
-        ic = icon(col["icon_url"], 56)
+        badge = col["badge"]
+        color = {"MVP": REPORT_GOLD, "ACE": REPORT_GOLD, "범인": REPORT_CORAL}.get(badge, WHITE)
+        ic = icon(col["icon_url"], 56, radius=9)
         if ic:
             img.paste(ic, (cx - 28, 16), ic)
-        if col["badge"]:
-            dr.rounded_rectangle((cx - 31, 13, cx + 31, 75), radius=14, outline=color, width=3)
-            pill(dr, cx, 114, col["badge"], color)
-        size = next((n for n in (24, 21, 18, 16) if dr.textlength(col["name"], font=font(n, 6)) <= col_w - 16), 14)  # 긴 닉네임
-        dr.text((cx, 84 + (24 - size) // 2), col["name"], font=font(size, 6), fill=color, anchor="ma")
-        dr.text((cx, 146), col["champion"], font=font(17), fill=LABEL, anchor="ma")
-        dr.text((cx, 170), col["kda"], font=font(20, 6), fill=WHITE, anchor="ma")
+        if badge:
+            dr.rounded_rectangle((cx - 31, 13, cx + 30, 74), radius=11, outline=shade(color, 0.81), width=2)
+            _report_badge(dr, cx, 121, badge, color)
+        name = col["name"]
+        size = next((n for n in (27, 24, 21, 18, 16)
+                     if font(n, 7).getlength(name) + len(name) <= col_w - 16), 14)
+        _report_text(dr, (cx, 83 + (27 - size) // 2), name, font(size, 7), color, "ma")
+        _report_text(dr, (cx, 159), col["champion"], font(17, 6), LABEL, "ma")
+        dr.text((cx, 184), col["kda"], font=font(27, 7), fill=WHITE, anchor="ma")
     for r, (label, values, fmt) in enumerate(rows):
         y = head_h + r * row_h
-        dr.text((24, y + 14), label, font=font(19), fill=LABEL)
-        hi = max(values) or 1
+        _report_text(dr, (24, y + 16), label, font(19, 6), (190, 184, 170))
+        low, high = min(values), max(values)
         for c, v in enumerate(values):
-            x0, x1 = round((c + 1) * col_w) + 16, round((c + 2) * col_w) - 16
-            top = v == hi
-            dr.text((x0, y + 4), fmt(v), font=font(20, 6), fill=WHITE if top else LABEL)
-            bar(img, (x0, y + 33, x1, y + 39), TRACK, dim_side=None)
-            bar(img, (x0, y + 33, x0 + (x1 - x0) * v / hi, y + 39), GOLD if top else SLATE)
+            x0, x1 = round((c + 1) * col_w) + 20, round((c + 2) * col_w) - 20
+            text_color, bar_color = (200, 194, 179), SLATE
+            if low < high:
+                if v == high:
+                    text_color, bar_color = WHITE, REPORT_GOLD
+                elif v == low:
+                    text_color = bar_color = REPORT_CORAL
+            dr.text((x0, y + 5), fmt(v), font=font(20, 7), fill=text_color)
+            bar(img, (x0, y + 37, x1, y + 43), TRACK, dim_side=None)
+            bar(img, (x0, y + 37, x0 + (x1 - x0) * v / (high or 1), y + 43), bar_color)
     return png(img)
 
 

@@ -27,6 +27,24 @@ class FlowEncodingTests(unittest.TestCase):
             self.assertEqual(gif.convert("RGB").getpixel((0, 0)), (29, 29, 29))
             self.assertEqual(gif.info["duration"], 3500)
 
+    def test_compression_keeps_turning_points_and_their_hold(self):
+        rng = random.Random(19)
+        frames = []
+        for i in range(30):
+            frame = Image.new("P", (80, 60))
+            frame.putpalette([v for n in range(256) for v in (n, n, n)])
+            frame.putdata([rng.randrange(256) for _ in range(80 * 60)])
+            frame.putpixel((0, 0), i)
+            frames.append(frame)
+        data = encode_bounded(frames, max_bytes=48000, holds={9: 700, 17: 700, 23: 700})
+        with Image.open(BytesIO(data)) as gif:
+            self.assertLess(gif.n_frames, len(frames))
+            seen = {}
+            for i in range(gif.n_frames):
+                gif.seek(i)
+                seen[gif.convert("RGB").getpixel((0, 0))[0]] = gif.info["duration"]
+        self.assertEqual({n: seen[n] for n in (0, 9, 17, 23, 29)}, {0: 1200, 9: 700, 17: 700, 23: 700, 29: 3500})
+
     def test_living_champion_stays_after_last_waypoint(self):
         path = Path2D()
         path.segments = [[(0, 100.0, 100.0), (60000, 900.0, 500.0)]]

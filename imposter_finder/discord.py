@@ -26,15 +26,22 @@ def _idempotent(payload: dict, channel_id: str, report_id: str | None) -> dict:
     return payload | {"nonce": nonce, "enforce_nonce": True}
 
 
-def with_highlight(payload: dict, files: list[tuple], highlight: tuple[dict, list[tuple]] | None) -> tuple[dict, list[tuple]]:
-    """하이라이트 GIF를 리포트의 마지막 이미지로 (경기 흐름 뒤, 총평 글 앞). 없으면 그대로."""
+def with_highlight(payload: dict, files: list[tuple], highlight: tuple[dict, list[tuple]] | None, *,
+                   before_file: str | None = None) -> tuple[dict, list[tuple]]:
+    """하이라이트를 지정한 이미지 앞에 넣는다. 기본은 총평 직전의 마지막 이미지."""
     if not highlight:
         return payload, files
     extra = highlight[1]
     box = next(c for c in payload["components"] if c["type"] == 17)
-    last = max((i for i, c in enumerate(box["components"]) if c["type"] == 12), default=-1)
-    box["components"].insert(last + 1, {"type": 12, "items": [{"media": {"url": f"attachment://{extra[0][0]}"}}]})
-    return payload, files + extra
+    media = [(i, c) for i, c in enumerate(box["components"]) if c["type"] == 12]
+    pos = media[-1][0] + 1 if media else 0
+    file_pos = len(files)
+    if before_file:
+        target = f"attachment://{before_file}"
+        pos = next((i for i, c in media if any(item["media"]["url"] == target for item in c["items"])), pos)
+        file_pos = next((i for i, item in enumerate(files) if item[0] == before_file), file_pos)
+    box["components"].insert(pos, {"type": 12, "items": [{"media": {"url": f"attachment://{extra[0][0]}"}}]})
+    return payload, files[:file_pos] + extra + files[file_pos:]
 
 
 class DiscordClient:

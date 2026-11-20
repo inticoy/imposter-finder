@@ -78,7 +78,7 @@ def run_lol_cycle(settings: Settings, store: LocalStore, notify: bool) -> dict[s
                 monitoring.error("lol.timeline", exc, "롤 타임라인 조회 실패")
                 print(f"[lol] timeline failed {match_id}: {exc}")
         payload, files = build_report(match, timeline, friends, _ddragon, settings.gemini_api_key, settings.gemini_model)
-        payload, files = with_highlight(payload, files, _highlight(match, timeline, friends))
+        payload, files = with_highlight(payload, files, _highlight(match, timeline, friends), before_file="flow.gif")
         for thread_id in settings.discord_lol_thread_ids:
             discord.send_with_files(thread_id, payload, files, report_id=f"{PLATFORM}:{match_id}")
         store.mark_notification_done(PLATFORM, match_id, "sent")
@@ -89,7 +89,7 @@ def run_lol_cycle(settings: Settings, store: LocalStore, notify: bool) -> dict[s
 
 
 def _highlight(match: dict, timeline: dict | None, friends: dict[str, Friend]) -> tuple[dict, list[tuple]] | None:
-    """친구 최고 교전 GIF (리포트의 마지막 이미지, 파일당 10MiB 안). 실패하면 빼고 리포트만 보낸다."""
+    """친구 최고 교전 GIF (경기 흐름 앞). 실패하면 빼고 리포트만 보낸다."""
     try:
         from imposter_finder.analysis.lol_highlight import build_highlight  # 지형 그림을 쓸 때만 불러온다
         won = any(p["win"] for p in match["info"]["participants"] if p["puuid"] in friends)

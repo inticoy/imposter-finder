@@ -38,16 +38,16 @@ STAT_ICONS = {"평타": f"{CDRAGON}/game/assets/perks/statmods/statmodsattackdam
               "기타": f"{CDRAGON}/game/assets/perks/statmods/statmodsadaptiveforceicon.png"}
 
 # ── 배치 ────────────────────────────────────────────────
-HEIGHT = 680
-VIEW = (PAD, 76, WIDTH - PAD, 496)  # 협곡 화면
+HEIGHT = 704
+VIEW = (PAD, 82, WIDTH - PAD, 502)  # 협곡 화면
 VW, VH = VIEW[2] - VIEW[0], VIEW[3] - VIEW[1]
-PANEL_Y, PANEL_B = 512, HEIGHT - 16
+PANEL_Y, PANEL_B = 522, HEIGHT - 20
 RSS = 2  # 지형은 두 배로 그려 줄인다
 
 # ── 장면 ────────────────────────────────────────────────
 FRAME_MS = 100
-FIRST_MS, LAST_MS = 900, 4000
-INTRO = 14  # 전체 지도 → 교전으로 다가가는 장면 수
+FIRST_MS, LAST_MS = 1200, 3200
+INTRO = 9  # 전체 지도 → 교전으로 다가가는 장면 수
 PRE_MS, POST_MS = 9000, 3500  # 첫 킬 전 · 마지막 킬 뒤
 STEP_CALM, STEP_FIGHT, STEP_SLOW = 220, 130, 65  # 장면 하나가 보여 주는 경기 시간 (ms)
 SLOW_BEFORE, SLOW_AFTER = 900, 1100  # 킬 앞뒤 느린 화면
@@ -668,22 +668,22 @@ def render(match: dict, timeline: dict, friend_puuids: set[str], ddragon: DDrago
     ui = Image.new("RGB", (WIDTH, HEIGHT), BG)
     ambient_bg(ui, splash, dim=AMBIENT_DIM, focus_y=0.4)
     dr = ImageDraw.Draw(ui)
-    header(dr, "하이라이트", [(ALLY, "우리 팀"), (ENEMY, "상대 팀")])
+    header(dr, "하이라이트", [(ALLY, "우리 팀"), (ENEMY, "상대 팀")], font_weights=(7, 6))
     title = headline(hl)
-    tx = PAD + dr.textlength("하이라이트", font=font(21, 6)) + 12
-    dr.text((tx, 25), f"{nickname(ps[star])} · {title} · {clock(t_first)}", font=font(15), fill=LABEL)
+    tx = PAD + dr.textlength("하이라이트", font=font(21, 7)) + 18
+    dr.text((tx, 24), f"{nickname(ps[star])} · {title} · {clock(t_first)}", font=font(15, 6), fill=LABEL)
 
     left = (PAD, PANEL_Y, PAD + 330, PANEL_B)
-    right = (PAD + 346, PANEL_Y, WIDTH - PAD, PANEL_B)
+    right = (PAD + 350, PANEL_Y, WIDTH - PAD, PANEL_B)
     glass(ui, left)
     glass(ui, right)
     sp = icon(champ_url[star], 50, radius=10)
     ui.paste(sp, (left[0] + 16, PANEL_Y + 16), sp)
     dr.rounded_rectangle((left[0] + 14, PANEL_Y + 14, left[0] + 67, PANEL_Y + 67), radius=11, outline=HIGHLIGHT, width=2)
-    dr.text((left[0] + 80, PANEL_Y + 20), nickname(ps[star]), font=font(19, 6), fill=WHITE)
-    dr.text((left[0] + 80, PANEL_Y + 47), champ_name(star), font=font(15), fill=LABEL)
+    dr.text((left[0] + 84, PANEL_Y + 19), nickname(ps[star]), font=font(19, 7), fill=WHITE)
+    dr.text((left[0] + 84, PANEL_Y + 49), champ_name(star), font=font(15, 6), fill=LABEL)
     slot_d, slot_gap = 40, 12
-    slot_y = PANEL_Y + 84
+    slot_y = PANEL_Y + 90
     slots = chain[:6]
     for n in range(len(slots)):
         x = left[0] + 16 + n * (slot_d + slot_gap)
@@ -692,11 +692,13 @@ def render(match: dict, timeline: dict, friend_puuids: set[str], ddragon: DDrago
     rows, per_kill = damage_rows(ps[star], chain, version)
     total = {key: sum(acc.get(key, 0) for acc in per_kill) for key, *_ in rows}
     vmax = max(total.values(), default=1) or 1
-    rx0 = right[0] + 18
-    dr.text((rx0, PANEL_Y + 14), "스킬별 피해", font=font(15), fill=LABEL)
+    rx0 = right[0] + 20
+    dr.text((rx0, PANEL_Y + 16), "스킬별 피해", font=font(15, 6), fill=LABEL)
     victims = len({k["victimId"] for k in chain})
-    dr.text((right[2] - 18, PANEL_Y + 14), f"처치한 {victims}명에게 준 피해", font=font(14), fill=LABEL, anchor="ra")
-    row_y0, row_h = PANEL_Y + 44, 22
+    dr.text((right[2] - 20, PANEL_Y + 16), f"처치한 {victims}명에게 준 피해", font=font(14, 6), fill=LABEL, anchor="ra")
+    row_y0, row_h = PANEL_Y + 47, 24
+    bar_x0, bar_x1 = rx0 + 248, right[2] - 84
+    spell_font = font(14, 6)
     for n, (key, name, url) in enumerate(rows):
         y = row_y0 + n * row_h
         ic = icon(url, 18, radius=4)
@@ -704,11 +706,13 @@ def render(match: dict, timeline: dict, friend_puuids: set[str], ddragon: DDrago
             ui.paste(ic, (rx0, y + 1), ic)
         label = "" if key.startswith("S:") or key in ("평타", "기타") else key
         if label:
-            dr.text((rx0 + 28, y + 10), label, font=font(14, 6), fill=GOLD, anchor="lm")
-        dr.text((rx0 + (50 if label else 28), y + 10), name, font=font(14), fill=WHITE, anchor="lm")
+            dr.text((rx0 + 28, y + 10), label, font=font(14, 7), fill=GOLD, anchor="lm")
+        name_x = rx0 + (50 if label else 28)
+        while len(name) > 1 and spell_font.getlength(name) > bar_x0 - name_x - 12:
+            name = name[:-2] + "…"
+        dr.text((name_x, y + 10), name, font=spell_font, fill=WHITE, anchor="lm")
     if not rows:
-        dr.text((rx0, row_y0 + 10), "피해 기록 없음", font=font(14), fill=LABEL, anchor="lm")
-    bar_x0, bar_x1 = rx0 + 230, right[2] - 84
+        dr.text((rx0, row_y0 + 10), "피해 기록 없음", font=font(14, 6), fill=LABEL, anchor="lm")
 
     view_mask = _rounded_mask(VW, VH)
 
@@ -875,7 +879,7 @@ def render(match: dict, timeline: dict, friend_puuids: set[str], ddragon: DDrago
             sx, sy = pos_of[star]
             d = next(it[5] for it in placed if it[0] == star)
             name = nickname(ps[star])
-            f = font(14, 6)
+            f = font(14, 7)
             w = ld.textlength(name, font=f)
             top = sy - d / 2 - (80 if use_models else 28)
             ld.rounded_rectangle((sx - w / 2 - 9, top, sx + w / 2 + 9, top + 22), radius=11, fill=HIGHLIGHT + (240,))
@@ -897,17 +901,17 @@ def render(match: dict, timeline: dict, friend_puuids: set[str], ddragon: DDrago
 
         d2 = ImageDraw.Draw(im)
         # 화면 위: 시계 · 킬 스코어
-        d2.text((VIEW[0] + 18, VIEW[1] + 14), clock(t), font=font(30, 6), fill=WHITE, stroke_width=2, stroke_fill=BG)
+        d2.text((VIEW[0] + 18, VIEW[1] + 14), clock(t), font=font(30, 7), fill=WHITE, stroke_width=2, stroke_fill=BG)
         score = {100: 0, 200: 0}
         for k in all_kills:
             if k["timestamp"] > t:
                 break
             if k["killerId"] in ps:
                 score[ps[k["killerId"]]["teamId"]] += 1
-        f30 = font(30, 6)
+        f30 = font(30, 7)
         x = VIEW[2] - 18
-        for text, fill, fnt in ((str(score[300 - team_id]), ENEMY, f30), (":", LABEL, font(24, 4)),
-                                (str(score[team_id]), ALLY, f30), ("킬", LABEL, font(15))):
+        for text, fill, fnt in ((str(score[300 - team_id]), ENEMY, f30), (":", LABEL, font(24, 6)),
+                                (str(score[team_id]), ALLY, f30), ("킬", LABEL, font(15, 6))):
             dy = {":": 2, "킬": 12}.get(text, 0)
             d2.text((x, VIEW[1] + 14 + dy), text, font=fnt, fill=fill, anchor="ra",
                     stroke_width=0 if text in (":", "킬") else 2, stroke_fill=BG)
@@ -922,7 +926,7 @@ def render(match: dict, timeline: dict, friend_puuids: set[str], ddragon: DDrago
             x0 = x1 - (feed_size * 2 + 38)
             fresh = t - k["timestamp"] < 2500
             glass(im, (x0 - 54, y - 3, x1 + 4, y + feed_size + 3), radius=8, alpha=34 if fresh else 18)
-            d2.text((x0 - 8, y + feed_size / 2), clock(k["timestamp"]), font=font(13), fill=LABEL, anchor="rm")
+            d2.text((x0 - 8, y + feed_size / 2), clock(k["timestamp"]), font=font(13, 6), fill=LABEL, anchor="rm")
             if killer in ps:
                 im.paste(feed_icon[killer], (x0, y), feed_icon[killer])
                 d2.rounded_rectangle((x0 - 1, y - 1, x0 + feed_size, y + feed_size), radius=6, outline=color_of(killer), width=2)
@@ -954,7 +958,7 @@ def render(match: dict, timeline: dict, friend_puuids: set[str], ddragon: DDrago
         if banner:
             text, big, c = banner
             size = 44 if big else 32
-            f = font(size, 6)
+            f = font(size, 7)
             w = d2.textlength(text, font=f)
             cx, cy = WIDTH / 2, VIEW[3] - 50
             hh = size * 0.78
@@ -967,7 +971,7 @@ def render(match: dict, timeline: dict, friend_puuids: set[str], ddragon: DDrago
             if t >= k["timestamp"]:
                 spr = portrait(k["victimId"], slot_d)
                 im.paste(spr, (x, slot_y), spr)
-                d2.text((x + slot_d / 2, slot_y + slot_d + 5), clock(k["timestamp"]), font=font(12), fill=LABEL, anchor="ma")
+                d2.text((x + slot_d / 2, slot_y + slot_d + 5), clock(k["timestamp"]), font=font(12, 6), fill=LABEL, anchor="ma")
         cur = {key: 0.0 for key, *_ in rows}
         for k, acc in zip(chain, per_kill):
             grow = min(max((t - k["timestamp"]) / 400, 0), 1)
@@ -978,7 +982,7 @@ def render(match: dict, timeline: dict, friend_puuids: set[str], ddragon: DDrago
             bar(im, (bar_x0, y + 7, bar_x1, y + 13), TRACK, dim_side=None)
             if cur[key] > 0:
                 bar(im, (bar_x0, y + 7, bar_x0 + (bar_x1 - bar_x0) * cur[key] / vmax, y + 13), GOLD if n == 0 else ALLY)
-            d2.text((right[2] - 18, y + 10), f"{round(cur[key]):,}", font=font(15, 6), fill=WHITE if cur[key] else LABEL,
+            d2.text((right[2] - 20, y + 10), f"{round(cur[key]):,}", font=font(15, 7), fill=WHITE if cur[key] else LABEL,
                     anchor="rm")
         return im
 
@@ -1000,20 +1004,24 @@ def render(match: dict, timeline: dict, friend_puuids: set[str], ddragon: DDrago
         else:
             cam = blend_camera(over_cam, fight_cam, k)
             frames.append(draw(terrain.view(cam), cam, t, intro=True))
-    return _encode(frames, fight_view, ui)
+    held.clear()
+    cover_time = min(t_last + 450, T1)
+    cover = draw(fight_view, fight_cam, cover_time)
+    return _encode([cover, *frames], fight_view)
 
 
-def _encode(frames: list[Image.Image], view: Image.Image, ui: Image.Image) -> bytes:
+def _encode(frames: list[Image.Image], view: Image.Image) -> bytes:
     """팔레트 하나 · 바탕은 점 섞기 · 안 바뀐 픽셀은 바탕 그대로. 용량을 넘으면 장면을 고르게 줄인다."""
-    base = frames[INTRO]
+    intro_end = INTRO + 1  # 표지 후 지도에서 교전으로 접근한다
+    base = frames[intro_end]
     sample = Image.new("RGB", (WIDTH, HEIGHT * 3))
-    for n, k in enumerate((INTRO + (len(frames) - INTRO) // 3, INTRO + (len(frames) - INTRO) * 2 // 3, len(frames) - 1)):
+    for n, k in enumerate((0, intro_end + (len(frames) - intro_end) // 2, len(frames) - 1)):
         sample.paste(frames[k], (0, HEIGHT * n))
     palette = shared_palette([(view, 120), (sample, 72), (frames[INTRO // 2], 40)], [ALLY, ENEMY, WHITE, GOLD, LABEL, HIGHLIGHT])
     base_idx = base.quantize(palette=palette, dither=Image.Dither.FLOYDSTEINBERG)
     indexed = []
     for n, im in enumerate(frames):
-        if n < INTRO:
+        if n < intro_end:
             indexed.append(im.quantize(palette=palette, dither=Image.Dither.FLOYDSTEINBERG))
             continue
         q = im.quantize(palette=palette, dither=Image.Dither.NONE)
@@ -1036,10 +1044,10 @@ def _encode(frames: list[Image.Image], view: Image.Image, ui: Image.Image) -> by
             return data
         # 다가가는 장면은 남기고, 나머지에서 고르게 덜어 낸다
         ratio = GIF_MAX_BYTES / len(data) * 0.92
-        body = keep[INTRO:-1]
+        body = keep[intro_end:-1]
         count = max(10, int(len(body) * ratio))
         body = [body[round(i * (len(body) - 1) / (count - 1))] for i in range(count)]
-        keep = keep[:INTRO] + sorted(set(body)) + [keep[-1]]
+        keep = keep[:intro_end] + sorted(set(body)) + [keep[-1]]
 
 
 def build_highlight(match: dict, timeline: dict | None, friends: dict, ddragon: DDragon,

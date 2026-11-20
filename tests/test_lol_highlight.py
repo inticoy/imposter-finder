@@ -130,6 +130,16 @@ class CollectorTests(unittest.TestCase):
         self.assertEqual([f[0] for f in files], ["result.png", "flow.gif", "highlight.gif"])
         self.assertIs(with_highlight(report, files, None)[1], files)
 
+    def test_lol_highlight_comes_before_flow_when_requested(self):
+        names = ["result.png", "players.png", "flow.gif"]
+        payload, files = with_highlight({"components": [{"type": 17, "components": [
+            {"type": 12, "items": [{"media": {"url": f"attachment://{name}"}}]} for name in names
+        ]}]}, [(name, b"") for name in names], ({}, [("highlight.gif", b"GIF")]), before_file="flow.gif")
+        expected = ["result.png", "players.png", "highlight.gif", "flow.gif"]
+        self.assertEqual([f[0] for f in files], expected)
+        self.assertEqual([c["items"][0]["media"]["url"] for c in payload["components"][0]["components"]],
+                         [f"attachment://{name}" for name in expected])
+
 
 class CameraTests(unittest.TestCase):
     def test_ground_homography_matches_projection(self):

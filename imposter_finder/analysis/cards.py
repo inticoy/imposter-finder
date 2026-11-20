@@ -12,8 +12,8 @@ from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 
 FONT_DIR = Path(__file__).resolve().parents[2] / "fonts"
 # 맥·리눅스(GitHub Actions)에서 같게: 레포의 Pretendard (OFL). 굵기 번호는 예전 Apple SD Gothic Neo 색인 그대로
-# 4·5 SemiBold → Medium, 6 Bold → SemiBold (Pretendard가 한 단계 굵다)
-FONT_FILES = {4: "Pretendard-Medium.otf", 5: "Pretendard-Medium.otf", 6: "Pretendard-SemiBold.otf"}
+# 4·5 SemiBold → Medium, 6 Bold → SemiBold, 7 → Bold
+FONT_FILES = {4: "Pretendard-Medium.otf", 5: "Pretendard-Medium.otf", 6: "Pretendard-SemiBold.otf", 7: "Pretendard-Bold.otf"}
 WIDTH, PAD = 1000, 32
 # 롤 클라이언트 CSS 색 (rcp-fe-lol-match-history / postgame)
 BG, PANEL, TRACK, GRID = (1, 10, 19), (30, 35, 40), (60, 60, 65), (30, 40, 45)  # #010A13 #1E2328 #3C3C41 #1E282D
@@ -197,13 +197,16 @@ def split_bar(img: Image.Image, x0: float, x1: float, y: float, left: float, rig
         ImageDraw.Draw(img).line((mid, y - 4, mid, y + height + 3), fill=LABEL, width=1)
 
 
-def header(draw: ImageDraw.ImageDraw, title: str, legend: list[tuple[tuple, str]]) -> int:
+def header(draw: ImageDraw.ImageDraw, title: str, legend: list[tuple[tuple, str]], *,
+           font_weights: tuple[int, int] = (6, 4)) -> int:
     """제목 · 오른쪽 범례 · 구분선. 내용이 시작할 y를 돌려준다."""
-    draw.text((PAD, 20), title, font=font(21, 6), fill=WHITE)
+    title_weight, legend_weight = font_weights
+    draw.text((PAD, 20), title, font=font(21, title_weight), fill=WHITE)
+    legend_font = font(15, legend_weight)
     x = WIDTH - PAD
     for color, text in reversed(legend):
-        x -= draw.textlength(text, font=font(15))
-        draw.text((x, 23), text, font=font(15), fill=LABEL)
+        x -= draw.textlength(text, font=legend_font)
+        draw.text((x, 23), text, font=legend_font, fill=LABEL)
         x -= 18
         draw.rounded_rectangle((x, 26, x + 11, 37), radius=3, fill=color)
         x -= 20
