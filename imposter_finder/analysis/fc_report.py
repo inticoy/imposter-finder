@@ -1,6 +1,6 @@
 """FC 온라인 친구전 리포트: 축구 중계처럼 구역별 이미지 + Gemini 총평·평가.
 
-이미지: 스코어보드 · 경기 MVP/범인 · 경기 기록 · 슈팅맵과 골 타임라인 · 라인업과 평점.
+이미지: 스코어보드 · 경기 MVP/범인 · 경기 기록 · 라인업과 평점.
 """
 from __future__ import annotations
 
@@ -226,7 +226,7 @@ def _glass_box(img: Image.Image, box: tuple, radius: int = 16, alpha: int = 30) 
 def render_scoreboard(left: Team, right: Team, scorers: dict[str, list[str]], form: list[str]) -> bytes:
     """엠블럼 · 닉네임 · 구단가치 · 큰 점수 · 득점자 · 최근 맞대결 (왼쪽 기준 결과, 오래된 순)."""
     lines = max(len(scorers[left.side["ouid"]]), len(scorers[right.side["ouid"]]), 1)
-    height = 196 + lines * 24 + (92 if form else 0)
+    height = 214 + lines * 31 + (104 if form else 0)
     img = _stage(height, left, right)
     dr = ImageDraw.Draw(img)
     cx = WIDTH // 2
@@ -239,30 +239,30 @@ def render_scoreboard(left: Team, right: Team, scorers: dict[str, list[str]], fo
         else:  # 팀컬러가 없으면 팀 색 원
             dr.ellipse((crest_x - 40, 32, crest_x + 40, 112), fill=team.color)
         if team.team_name:
-            dr.text((crest_x, 126), team.team_name, font=font(14), fill=LABEL, anchor="ma")
+            dr.text((crest_x, 126), team.team_name, font=font(17, 6), fill=(194, 204, 215), anchor="ma")
         name_x = cx + sign * 150
         anchor = "ra" if sign < 0 else "la"
-        f = _fit(dr, team.nickname, 175, 30)
+        f = _fit(dr, team.nickname, 175, 30, weight=7)
         dr.text((name_x, 44), team.nickname, font=f, fill=WHITE if team.won or draw_game else LABEL, anchor=anchor)
         if team.value:
-            dr.text((name_x, 90), f"구단가치 {format_bp(team.value)}", font=font(15, 6), fill=LABEL, anchor=anchor)
+            dr.text((name_x, 90), f"구단가치 {format_bp(team.value)}", font=font(16, 6), fill=(194, 204, 215), anchor=anchor)
         bar_x0 = name_x - 60 if sign < 0 else name_x
         dr.rectangle((bar_x0, 122, bar_x0 + 60, 125), fill=team.color)
     lg, rg = goals(left.side), goals(right.side)
-    dr.text((cx - 22, 18), str(lg), font=font(84, 6), fill=WHITE if lg >= rg else LABEL, anchor="ra")
+    dr.text((cx - 22, 18), str(lg), font=font(84, 7), fill=WHITE if lg >= rg else LABEL, anchor="ra")
     dr.text((cx, 26), ":", font=font(64, 6), fill=LABEL, anchor="ma")
-    dr.text((cx + 22, 18), str(rg), font=font(84, 6), fill=WHITE if rg >= lg else LABEL, anchor="la")
+    dr.text((cx + 22, 18), str(rg), font=font(84, 7), fill=WHITE if rg >= lg else LABEL, anchor="la")
     dr.rounded_rectangle((cx - 44, 126, cx + 44, 152), radius=13, fill=TRACK)
     dr.text((cx, 130), "경기 종료", font=font(14, 6), fill=WHITE, anchor="ma")
     for team, sign in ((left, -1), (right, 1)):
         for n, line in enumerate(scorers[team.side["ouid"]]):
-            dr.text((cx + sign * 30, 182 + n * 24), line, font=font(16), fill=WHITE, anchor="rm" if sign < 0 else "lm")
+            dr.text((cx + sign * 30, 188 + n * 31), line, font=font(19, 6), fill=WHITE, anchor="rm" if sign < 0 else "lm")
     if scorers[left.side["ouid"]] or scorers[right.side["ouid"]]:
-        emoji(img, ICON_GOAL, cx, 182, 18)
+        emoji(img, ICON_GOAL, cx, 188, 18)
     if form:  # 최근 맞대결: 경기마다 이긴 사람 색 점, 무승부는 회색 (오래된 → 이번 경기)
         y = height - 48
         w, d, l = form.count("승"), form.count("무"), form.count("패")
-        dr.text((cx, y - 34), f"최근 {len(form)}경기 맞대결", font=font(14), fill=LABEL, anchor="ma")
+        dr.text((cx, y - 40), f"최근 {len(form)}경기 맞대결", font=font(17, 6), fill=(194, 204, 215), anchor="ma")
         step = 24
         x0 = cx - step * (len(form) - 1) / 2
         for n, result in enumerate(form):
@@ -274,13 +274,13 @@ def render_scoreboard(left: Team, right: Team, scorers: dict[str, list[str]], fo
         dr.text((cx - edge, y), f"{w}승", font=font(17, 6), fill=WHITE, anchor="rm")
         dr.text((cx + edge, y), f"{l}승", font=font(17, 6), fill=WHITE, anchor="lm")
         if d:  # 무승부는 회색 점, 수는 점 아래 가운데
-            dr.text((cx, y + 18), f"{d}무", font=font(14), fill=LABEL, anchor="ma")
+            dr.text((cx, y + 18), f"{d}무", font=font(17, 6), fill=(194, 204, 215), anchor="ma")
     return png(img)
 
 
 def render_potm(cards: list[dict], left: Team, right: Team) -> bytes:
     """경기 MVP·범인: 선수 사진 | 라벨 · 강화+시즌+이름 · 구단주 · 평점 · 골/도움/슈팅 칩. 안쪽 여백은 모두 PAD_IN."""
-    height, pad_in = 262, 22
+    height, pad_in = 286, 23
     img = _stage(height, left, right)
     dr = ImageDraw.Draw(img)
     gap = 24
@@ -297,7 +297,7 @@ def render_potm(cards: list[dict], left: Team, right: Team) -> bytes:
                 bbox = photo.getchannel("A").getbbox()
                 if bbox:
                     photo = photo.crop(bbox)
-                side = y1 - y0 - pad_in * 2
+                side = min(178, round(156 * photo.height / photo.width))
                 photo = photo.resize((round(photo.width * side / photo.height), side), Image.LANCZOS)
                 img.paste(photo, (x0 + pad_in, y0 + pad_in), photo)
                 photo_w = photo.width
@@ -305,23 +305,26 @@ def render_potm(cards: list[dict], left: Team, right: Team) -> bytes:
                 pass
         tx = x0 + pad_in + max(photo_w, 150) + pad_in
         is_mvp = card["badge"] == "MVP"
-        accent = MVP_GOLD if is_mvp else CULPRIT_RED
+        accent = MVP_GOLD if is_mvp else (255, 123, 135)
         row = y0 + pad_in
-        emoji(img, ICON_MVP if is_mvp else ICON_CULPRIT, tx + 9, row + 9, 18)
-        dr.text((tx + 24, row + 9), "경기 MVP" if is_mvp else "범인", font=font(15, 6), fill=accent, anchor="lm")
-        row += 42  # 강화 배지 · 시즌 · 이름 (FC 온라인 표기 순서)
+        tag = "경기 MVP" if is_mvp else "범인"
+        face = font(17, 7)
+        tag_w = dr.textlength(tag, font=face) + 24
+        dr.rounded_rectangle((tx, row - 3, tx + tag_w, row + 24), radius=14, fill=accent)
+        dr.text((tx + tag_w / 2, row + 10), tag, font=face, fill=BG, anchor="mm")
+        row += 49  # 강화 배지 · 시즌 · 이름 (FC 온라인 표기 순서)
         x = tx + grade_badge(img, tx, row - 11, card["grade"], h=22) + 6
         season = icon(card.get("season_img"), 24, radius=0) if card.get("season_img") else None
         if season:
             img.paste(season, (x, row - season.height // 2), season)
             x += season.width + 6
-        dr.text((x, row), card["name"], font=_fit(dr, card["name"], x1 - pad_in - x, 22), fill=WHITE, anchor="lm")
-        row += 26
-        dr.text((tx, row), card["owner"], font=font(14), fill=LABEL, anchor="lm")
+        dr.text((x, row), card["name"], font=_fit(dr, card["name"], x1 - pad_in - x, 23, weight=7), fill=WHITE, anchor="lm")
+        row += 29
+        dr.text((tx, row), card["owner"], font=font(16, 6), fill=(193, 204, 218), anchor="lm")
         row += 46
         rating = f"{card['rating']:.1f}"
-        dr.text((tx, row), rating, font=font(42, 6), fill=accent, anchor="ls")
-        dr.text((tx + dr.textlength(rating, font=font(42, 6)) + 8, row - 2), "평점", font=font(14), fill=LABEL,
+        dr.text((tx, row), rating, font=font(44, 7), fill=accent, anchor="ls")
+        dr.text((tx + dr.textlength(rating, font=font(44, 7)) + 8, row - 2), "평점", font=font(16, 6), fill=(193, 204, 218),
                 anchor="ls")
         cx = tx
         for symbol, value in card["chips"]:
@@ -329,20 +332,27 @@ def render_potm(cards: list[dict], left: Team, right: Team) -> bytes:
     return png(img)
 
 
+def _stat_color(color: tuple) -> tuple:
+    """Keep team colors recognizable while lifting dark bars on the match background."""
+    return tuple(round(channel + (255 - channel) * 0.34) for channel in color)
+
+
 def render_stats(rows: list[tuple], left: Team, right: Team) -> bytes:
     """경기 기록: 왼쪽 값 · 가운데 항목 · 오른쪽 값, 아래 팀 색 비율 막대."""
-    row_h = 50
+    row_h = 56
     height = 90 + row_h * len(rows) + 10
     img = _stage(height, left, right)
     dr = ImageDraw.Draw(img)
-    top = header(dr, "경기 기록", [(left.color, left.nickname), (right.color, right.nickname)])
+    left_color = _stat_color(left.color)
+    right_color = _stat_color(right.color)
+    top = header(dr, "경기 기록", [(left_color, left.nickname), (right_color, right.nickname)], font_weights=(7, 6))
     x0, x1 = PAD + 90, WIDTH - PAD - 90
     for n, (label, lv, lt, rv, rt) in enumerate(rows):
         y = top + n * row_h
-        dr.text((PAD, y + 4), lt, font=font(22, 6), fill=WHITE if lv >= rv else LABEL)
-        dr.text((WIDTH - PAD, y + 4), rt, font=font(22, 6), fill=WHITE if rv >= lv else LABEL, anchor="ra")
-        dr.text((WIDTH // 2, y + 2), label, font=font(16), fill=LABEL, anchor="ma")
-        split_bar(img, x0, x1, y + 28, lv, rv, height=7, left_color=left.color, right_color=right.color)
+        dr.text((PAD, y + 4), lt, font=font(24, 7), fill=WHITE if lv >= rv else (198, 209, 221))
+        dr.text((WIDTH - PAD, y + 4), rt, font=font(24, 7), fill=WHITE if rv >= lv else (198, 209, 221), anchor="ra")
+        dr.text((WIDTH // 2, y + 2), label, font=font(20, 6), fill=(205, 214, 225), anchor="ma")
+        split_bar(img, x0, x1, y + 34, lv, rv, height=9, left_color=left_color, right_color=right_color)
     return png(img)
 
 
@@ -480,14 +490,14 @@ def _face(url: str, d: int, ring: tuple | None) -> Image.Image | None:
 
 def render_lineup(left: Team, right: Team, meta: FcMeta, names: dict[int, str], mvp: int, culprit: int) -> bytes:
     """라인업: 팀마다 세로 반쪽 경기장, 포메이션 위치에 얼굴 · 평점 · 시즌 · 이름."""
-    top, gap = 76, 20
+    top, gap = 82, 20
     pw = (WIDTH - PAD * 2 - gap) // 2
-    ph = 440
+    ph = 468
     height = top + 34 + ph + 22
     img = _stage(height, left, right)
     dr = ImageDraw.Draw(img)
     header(dr, "라인업 · 평점", [(rating_color(9), "9+"), (rating_color(8), "8+"), (rating_color(7), "7+"),
-                               (rating_color(6), "6+"), (rating_color(5), "6 미만")])
+                               (rating_color(6), "6+"), (rating_color(5), "6 미만")], font_weights=(7, 6))
     for n, team in enumerate((left, right)):
         px0, py0 = PAD + n * (pw + gap), top + 34
         _team_title(img, team, px0, top + 15)
@@ -502,17 +512,17 @@ def render_lineup(left: Team, right: Team, meta: FcMeta, names: dict[int, str], 
             face = _face(face_image(p["spId"]), 46, ring)
             img.paste(face, (round(x - 23), round(y - 30)), face)
             rating = f"{st['spRating']:.1f}"  # 평점 칩: 얼굴 오른쪽 아래
-            rw = dr.textlength(rating, font=font(12, 6)) + 10
+            rw = dr.textlength(rating, font=font(13, 7)) + 10
             dr.rounded_rectangle((x + 8, y + 2, x + 8 + rw, y + 20), radius=9, fill=rating_color(st["spRating"]))
-            dr.text((x + 8 + rw / 2, y + 11), rating, font=font(12, 6), fill=WHITE, anchor="mm")
+            dr.text((x + 8 + rw / 2, y + 11), rating, font=font(13, 7), fill=BG, anchor="mm")
             season = icon(meta.season_image(p["spId"]), 14, radius=0)
             name = names.get(p["spId"], "")
-            nw = dr.textlength(name, font=font(12, 6)) + (17 if season else 0)
+            nw = dr.textlength(name, font=font(13, 7)) + (17 if season else 0)
             sx = x - nw / 2
             if season:
                 img.paste(season, (round(sx), round(y + 22)), season)
                 sx += 17
-            dr.text((sx, y + 29), name, font=font(12, 6), fill=WHITE, anchor="lm", stroke_width=2, stroke_fill=PITCH_DARK)
+            dr.text((sx, y + 29), name, font=font(13, 7), fill=WHITE, anchor="lm", stroke_width=2, stroke_fill=PITCH_DARK)
             marks = [ICON_GOAL] * st.get("goal", 0) + [ICON_ASSIST] * st.get("assist", 0)
             for k, symbol in enumerate(marks):  # 얼굴 왼쪽 위에 골·도움
                 emoji(img, symbol, x - 24 + k * 15, y - 26, 15)
@@ -580,19 +590,6 @@ def _culprit(match: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
     return min(starters, key=lambda item: item[1]["status"]["spRating"])
 
 
-def _flow_or_shots(left: Team, right: Team, names: dict[int, str]) -> tuple:
-    """슈팅 리플레이 GIF. 실패하면 예전 슈팅맵 이미지."""
-    try:
-        from imposter_finder.analysis.fc_flow import render  # fc_flow가 이 모듈의 스타일을 가져다 쓴다
-        data = render(left, right, names)
-        monitoring.observe("fc.flow")
-        return "flow.gif", data, "image/gif"
-    except Exception as exc:
-        monitoring.error("fc.flow", exc, "FC 경기 흐름 GIF 실패 — 슈팅맵 이미지로 대체")
-        print(f"[fc] flow rendering failed: {exc}")
-        return "shots.png", render_shots(left, right)
-
-
 def build_report(match: dict[str, Any], head_to_head: list[dict[str, Any]], friends: dict[str, Friend],
                  meta: FcMeta, colors: FcTeamColors | None, gemini_api_key: str | None,
                  gemini_model: str, prices: FcPrices | None = None) -> tuple[dict[str, Any], list[tuple[str, bytes]]]:
@@ -628,7 +625,6 @@ def build_report(match: dict[str, Any], head_to_head: list[dict[str, Any]], frie
     files = [("score.png", render_scoreboard(left, right, scorers, _form(head_to_head, left.side["ouid"]))),
              ("potm.png", render_potm(cards, left, right)),
              ("stats.png", render_stats(_stat_rows(left.side, right.side), left, right)),
-             _flow_or_shots(left, right, names),
              ("lineup.png", render_lineup(left, right, meta, names, mvp["spId"], culprit["spId"]))]
 
     ai = _evaluate(left, right, cards, meta, gemini_api_key, gemini_model)

@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from imposter_finder.analysis.fc_highlight import build_highlight
-from imposter_finder.analysis.fc_league import LEAGUE_EVERY, build_league_report
+from imposter_finder.analysis.fc_league import LEAGUE_EVERY, _played, build_league_report
 from imposter_finder.analysis.fc_report import Friend, build_forfeit_report, build_report, is_forfeit
 from imposter_finder.config import ROOT_DIR, Settings
 from imposter_finder.discord import DiscordClient, with_highlight
@@ -122,25 +122,34 @@ def _publish_league(settings: Settings, store: LocalStore, discord: DiscordClien
     """리포트를 보낸 친구전이 LEAGUE_EVERY개 쌓이면 리그 리포트. 처음엔 지금부터 센다."""
     last = store.last_notification(LEAGUE)
     after = (store.fc_match(last) or {}).get("matchDate") if last else None
-    window = store.fc_sent_after(PLATFORM, after)
+    pending = store.fc_sent_after(PLATFORM, after, last)
     if not last:
-        if window:
-            store.mark_notification_done(LEAGUE, window[-1]["matchId"], "bootstrap")
+        if pending:
+            store.mark_notification_done(LEAGUE, pending[-1]["matchId"], "bootstrap")
         return 0
-    if len(window) < LEAGUE_EVERY:
+    played = [m for m in pending if _played(m)]
+    if len(played) < LEAGUE_EVERY:
         return 0
-    try:
-        history = [m for m in store.fc_matches() if m["matchDate"] <= window[-1]["matchDate"]]
-        payload, files = build_league_report(history, window, friends)
-        for thread_id in settings.discord_fc_thread_ids:
-            discord.send_with_files(thread_id, payload, files, report_id=f"{LEAGUE}:{window[-1]['matchId']}")
-        monitoring.observe("fc.league")
-    except Exception as exc:
-        monitoring.error("fc.league", exc, "FC 리그 리포트 실패 — 다음 실행에서 다시 시도")
-        print(f"[fc] league report failed: {exc}")
-        return 0
-    store.mark_notification_done(LEAGUE, window[-1]["matchId"], "sent")
-    return 1
+    all_matches = store.fc_matches()
+    meta = _meta or FcMeta(ROOT_DIR / "data" / "fc_meta")
+    published = 0
+    for start in range(0, len(played) - LEAGUE_EVERY + 1, LEAGUE_EVERY):
+        window = played[start:start + LEAGUE_EVERY]
+        last_match = window[-1]
+        endpoint = last_match["matchDate"], last_match["matchId"]
+        history = [m for m in all_matches if (m["matchDate"], m["matchId"]) <= endpoint]
+        try:
+            payload, files = build_league_report(history, window, friends, meta)
+            for thread_id in settings.discord_fc_thread_ids:
+                discord.send_with_files(thread_id, payload, files, report_id=f"{LEAGUE}:{last_match['matchId']}")
+            monitoring.observe("fc.league")
+        except Exception as exc:
+            monitoring.error("fc.league", exc, "FC 리그 리포트 실패 — 다음 실행에서 다시 시도")
+            print(f"[fc] league report failed: {exc}")
+            break
+        store.mark_notification_done(LEAGUE, last_match["matchId"], "sent")
+        published += 1
+    return published
 
 
 def _too_old(match: dict[str, Any]) -> bool:

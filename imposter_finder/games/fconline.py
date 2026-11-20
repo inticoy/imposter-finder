@@ -66,6 +66,7 @@ class FcMeta:
         self.cache_dir = cache_dir
         self._names: dict[int, str] | None = None
         self._seasons: dict[int, str] | None = None
+        self._season_images: dict[int, str | None] = {}
 
     def _load(self, name: str) -> list[dict[str, Any]]:
         path = self.cache_dir / f"{name}.json"
@@ -81,14 +82,27 @@ class FcMeta:
         return self._names.get(spid, str(spid))
 
     def season_image(self, spid: int) -> str | None:
-        if getattr(self, "_season_images", None) is None:
-            self._season_images = {item["seasonId"]: item.get("seasonImg") for item in self._load("seasonid")}
+        self._load_classes()
         return self._season_images.get(spid // 1000000)
 
     def season_name(self, spid: int) -> str:
-        if self._seasons is None:
-            self._seasons = {item["seasonId"]: item["className"].split(" (")[0] for item in self._load("seasonid")}
-        return self._seasons.get(spid // 1000000, "")
+        self._load_classes()
+        return (self._seasons or {}).get(spid // 1000000, "")
+
+    def _load_classes(self) -> None:
+        if self._seasons is not None:
+            return
+        try:
+            items = self._load("class")
+        except (OSError, ValueError):
+            # Older installs may already have a usable copy of the retired endpoint.
+            path = self.cache_dir / "seasonid.json"
+            if not path.exists():
+                raise
+            items = json.loads(path.read_text(encoding="utf-8"))
+        self._seasons = {item.get("class", item.get("seasonId")): item["className"].split(" (", 1)[0] for item in items}
+        self._season_images = {item.get("class", item.get("seasonId")): item.get("classImg", item.get("seasonImg"))
+                               for item in items}
 
 
 DATACENTER = "https://fconline.nexon.com/datacenter"

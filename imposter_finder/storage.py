@@ -220,20 +220,20 @@ class LocalStore:
     def fc_matches(self) -> list[dict[str, Any]]:
         """쌓인 친구전 전부, 오래된 순."""
         with self._lock:
-            rows = self._connection.execute("SELECT payload_json FROM fc_matches ORDER BY match_date").fetchall()
+            rows = self._connection.execute("SELECT payload_json FROM fc_matches ORDER BY match_date, match_id").fetchall()
         return [json.loads(row["payload_json"]) for row in rows]
 
-    def fc_sent_after(self, platform: str, after: str | None) -> list[dict[str, Any]]:
-        """리포트를 보낸 친구전 중 after(matchDate)보다 뒤, 오래된 순."""
+    def fc_sent_after(self, platform: str, after: str | None, after_id: str | None = None) -> list[dict[str, Any]]:
+        """리포트를 보낸 친구전 중 지정한 경기보다 뒤, 오래된 순."""
         with self._lock:
             rows = self._connection.execute(
                 """
                 SELECT m.payload_json FROM fc_matches m
                 JOIN match_notifications n ON n.match_id = m.match_id AND n.platform = ? AND n.outcome = 'sent'
-                WHERE ? IS NULL OR m.match_date > ?
-                ORDER BY m.match_date
+                WHERE ? IS NULL OR m.match_date > ? OR (m.match_date = ? AND m.match_id > ?)
+                ORDER BY m.match_date, m.match_id
                 """,
-                (platform, after, after),
+                (platform, after, after, after, after_id),
             ).fetchall()
         return [json.loads(row["payload_json"]) for row in rows]
 
