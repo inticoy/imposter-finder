@@ -280,6 +280,36 @@ class LocalStore:
             row = self._connection.execute("SELECT payload_json FROM lol_matches WHERE match_id = ?", (match_id,)).fetchone()
         return json.loads(row["payload_json"]) if row else None
 
+    def lol_league_anchor(self) -> str | None:
+        with self._lock:
+            row = self._connection.execute(
+                """SELECT match_id FROM match_notifications
+                   WHERE platform = 'lol' AND outcome = 'sent'
+                   ORDER BY processed_at DESC, match_id DESC LIMIT 1"""
+            ).fetchone()
+        return row["match_id"] if row else None
+
+    def lol_league_pending(self, queue: int, after: str) -> list[dict[str, Any]]:
+        """개별 리포트를 보낸 순서로 센다. 늦게 발견한 경기도 다음 묶음에 들어간다."""
+        with self._lock:
+            rows = self._connection.execute(
+                """SELECT m.payload_json FROM lol_matches m
+                   JOIN match_notifications n ON n.match_id = m.match_id
+                   LEFT JOIN match_notifications anchor ON anchor.platform = 'lol' AND anchor.match_id = ?
+                   WHERE n.platform = 'lol' AND n.outcome = 'sent' AND m.queue_id = ?
+                     AND (anchor.match_id IS NULL OR (n.processed_at, n.match_id) > (anchor.processed_at, anchor.match_id))
+                   ORDER BY n.processed_at, n.match_id""",
+                (after, queue),
+            ).fetchall()
+        return [json.loads(row["payload_json"]) for row in rows]
+
+    def lol_league_history(self, queue: int) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._connection.execute(
+                "SELECT payload_json FROM lol_matches WHERE queue_id = ? ORDER BY game_creation, match_id", (queue,)
+            ).fetchall()
+        return [json.loads(row["payload_json"]) for row in rows]
+
     def upsert_lol_match(self, match: dict[str, Any]) -> None:
         info = match["info"]
         with self._lock:

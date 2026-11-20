@@ -182,7 +182,8 @@ async def _lol_loop(settings: Settings, store: LocalStore) -> None:
     while True:
         try:
             result = await asyncio.to_thread(run_lol_cycle, settings, store, not first_cycle)
-            print(f"[lol] group_matches={result['group_matches']} published={result['published']} bootstrap={first_cycle}")
+            print(f"[lol] group_matches={result['group_matches']} published={result['published']} "
+                  f"league={result.get('league', 0)} bootstrap={first_cycle}")
             first_cycle = False
         except asyncio.CancelledError:
             raise
