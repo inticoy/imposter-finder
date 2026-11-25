@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import time
 
-from imposter_finder.analysis.lol_league import FLEX_QUEUE, LEAGUE_EVERY, build_league_report, friend_game
+from imposter_finder.analysis.lol_league import LEAGUE_EVERY, RANKED_QUEUES, build_league_report, friend_game
 from imposter_finder.analysis.lol_report import ACCENT_LOSE, ACCENT_WIN, Friend, build_report
 from imposter_finder.config import Settings
 from imposter_finder.discord import DiscordClient, with_highlight
@@ -114,13 +114,13 @@ def _publish_league(settings: Settings, store: LocalStore, discord: DiscordClien
     last = store.last_notification(LEAGUE)
     if not last or not settings.discord_lol_thread_ids:
         return 0
-    pending = [game for match in store.lol_league_pending(FLEX_QUEUE, last)
+    pending = [game for match in store.lol_league_pending(RANKED_QUEUES, last)
                if (game := friend_game(match, friends)) is not None]
     if len(pending) < LEAGUE_EVERY:
         return 0
 
     waiting_ids = {game.id for game in pending}
-    history = [game for match in store.lol_league_history(FLEX_QUEUE)
+    history = [game for match in store.lol_league_history(RANKED_QUEUES)
                if match["metadata"]["matchId"] not in waiting_ids
                and (game := friend_game(match, friends)) is not None]
     published = 0

@@ -2,7 +2,7 @@ from dataclasses import replace
 from unittest.mock import Mock
 
 from imposter_finder import lol_collector
-from imposter_finder.analysis.lol_league import FLEX_QUEUE, _record_book, friend_game
+from imposter_finder.analysis.lol_league import FLEX_QUEUE, SOLO_DUO_QUEUE, _record_book, friend_game
 from imposter_finder.analysis.lol_report import Friend
 from imposter_finder.config import Settings
 from imposter_finder.storage import LocalStore
@@ -22,17 +22,18 @@ def match(mid, created=1000, queue=FLEX_QUEUE, remake=False, duration=1800, kill
     }}
 
 
-def test_rollout_uses_only_new_reports_and_same_team_flex_games(tmp_path, monkeypatch):
+def test_rollout_combines_new_same_team_ranked_games(tmp_path, monkeypatch):
     store = LocalStore(tmp_path / "state.sqlite")
     settings = Settings("dev", "test", 24, tmp_path / "players.json", discord_lol_thread_ids=("thread",))
     riot, discord = Mock(), Mock()
     stored = {str(i): match(str(i), 2000 - i) for i in range(1, 7)}
     stored["remake"] = match("remake", remake=True)
-    stored["solo"] = match("solo", queue=420)
+    stored["2"] = match("2", 1998, queue=SOLO_DUO_QUEUE)
+    stored["normal"] = match("normal", queue=400)
     stored["opponents"] = match("opponents")
     stored["opponents"]["info"]["participants"][1]["teamId"] = 200
     for i in range(6):
-        old = match(f"old{i}", 2000 + i)
+        old = match(f"old{i}", 2000 + i, queue=SOLO_DUO_QUEUE if i % 2 else FLEX_QUEUE)
         store.upsert_lol_match(old)
         store.mark_notification_done("lol", f"old{i}", "sent")
 
@@ -48,7 +49,7 @@ def test_rollout_uses_only_new_reports_and_same_team_flex_games(tmp_path, monkey
     render = Mock(return_value=({}, []))
     monkeypatch.setattr(lol_collector, "build_league_report", render)
     riot.match.side_effect = stored.__getitem__
-    riot.match_ids.return_value = ["1", "2", "3", "4", "remake", "solo", "opponents"]
+    riot.match_ids.return_value = ["1", "2", "3", "4", "remake", "normal", "opponents"]
     assert lol_collector.run_lol_cycle(settings, store, True)["league"] == 0
     render.assert_not_called()
     riot.match_ids.return_value = ["5", "6"]

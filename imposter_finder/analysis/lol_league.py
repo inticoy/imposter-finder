@@ -1,4 +1,4 @@
-"""자유랭크 친구전 5경기 리포트와 통산 기록."""
+"""솔로/듀오·자유랭크 친구전 5경기 리포트와 통산 기록."""
 from __future__ import annotations
 
 from collections import Counter, defaultdict
@@ -16,7 +16,9 @@ from imposter_finder.analysis.lol_report import (
 )
 from imposter_finder.games.lol import DDragon, DDRAGON
 
-FLEX_QUEUE, LEAGUE_EVERY, BEST_MIN_GAMES = 440, 5, 5
+SOLO_DUO_QUEUE, FLEX_QUEUE = 420, 440
+RANKED_QUEUES = (SOLO_DUO_QUEUE, FLEX_QUEUE)
+LEAGUE_EVERY, BEST_MIN_GAMES = 5, 5
 SURFACE, TEXT, MUTED, DIVIDER = "#111a27", "#f3f6fb", "#acbbcc", "#2b3b4e"
 KST = timezone(timedelta(hours=9))
 
@@ -51,7 +53,7 @@ class Game:
 def friend_game(match: dict, friends: dict[str, Friend]) -> Game | None:
     info = match["info"]
     duration = info.get("gameDuration", 0)
-    if info["queueId"] != FLEX_QUEUE or duration < 300:
+    if info["queueId"] not in RANKED_QUEUES or duration < 300:
         return None
     participants = info["participants"]
     if any(p.get("gameEndedInEarlySurrender") for p in participants):
@@ -216,7 +218,7 @@ class Card:
 def _match_card(window: list[Game], dd: DDragon) -> bytes:
     g, highlight = max(((g, p) for g in window for p in g.players),
                        key=lambda gp: (gp[1].multikill, gp[0].won, gp[1].kills))
-    card = Card("5경기 전적", f"자유랭크 · {window[0].date:%m.%d}~{window[-1].date:%m.%d}", 470, dd,
+    card = Card("5경기 전적", f"솔로/듀오·자유랭크 · {window[0].date:%m.%d}~{window[-1].date:%m.%d}", 470, dd,
                 art=highlight.champion)
     card.results(29, 73, window, 38)
     card.bar(211, 443, 89, window)
