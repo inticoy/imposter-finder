@@ -20,7 +20,7 @@ from imposter_finder.games.fconline import FcMeta
 
 LEAGUE_EVERY = 5  # 친구전 이만큼 쌓이면 리그 리포트
 ELO_START, ELO_K = 1500, 16  # 같은 상대와 자주 붙어 K가 크면 몇 경기에 순위가 뒤집힌다 (30이면 20경기에 ±150)
-STYLE_MIN_GAMES = 5  # 플레이 스타일은 이 경기 수 이상만 (적으면 들쭉날쭉)
+STYLE_MIN_GAMES = 5  # 미만은 적은 표본임을 표시한다
 UP, DOWN, SAME = (62, 207, 142), (239, 91, 91), (120, 126, 138)
 ATTACK, DEFENSE, BUILD = (229, 144, 133), (155, 191, 233), (239, 194, 101)
 ACCENT = 0x2ECC71
@@ -215,7 +215,12 @@ def render_styles(people: list[tuple[str, dict[str, float]]], scale: list[tuple[
         top = 76 + row * row_height
         cx, cy = PAD + cell * (col + 0.5), top + 142
         dr.text((cx, top), name, font=font(22, 7), fill=WHITE, anchor="ma")
-        dr.text((cx, top + 28), f"{int(totals['n'])}경기", font=font(15, 6), fill=LABEL, anchor="ma")
+        count = int(totals.get("n", 0))
+        sample = " · 표본 적음" if 0 < count < STYLE_MIN_GAMES else ""
+        dr.text((cx, top + 28), f"{count}경기{sample}", font=font(15, 6), fill=LABEL, anchor="ma")
+        if not count:
+            dr.text((cx, cy), "집계된 친구전 없음", font=font(17, 6), fill=LABEL, anchor="mm")
+            continue
         radius = 65
 
         def point(angle: float, r: float) -> tuple[float, float]:
@@ -226,7 +231,7 @@ def render_styles(people: list[tuple[str, dict[str, float]]], scale: list[tuple[
         for a in angles:
             dr.line(((cx, cy), point(a, radius)), fill=(45, 50, 61))
         values = [f(totals) for _, _, f in STYLE_METRICS]
-        pts = [point(a, radius * (0.16 + 0.84 * ((v - lo) / (hi - lo) if hi > lo else 0.5)))
+        pts = [point(a, radius * (0.16 + 0.84 * (min(1, max(0, (v - lo) / (hi - lo))) if hi > lo else 0.5)))
                for a, v, (lo, hi) in zip(angles, values, scale)]
         layer = Image.new("RGBA", img.size)
         paint = ImageDraw.Draw(layer)
@@ -243,7 +248,7 @@ def render_styles(people: list[tuple[str, dict[str, float]]], scale: list[tuple[
 
 
 def build_league_report(history: list[dict[str, Any]], window: list[dict[str, Any]],
-                        friends: dict[str, Friend], meta: FcMeta) -> tuple[dict[str, Any], list[tuple[str, bytes]]]:
+                        friends: dict[str, Friend], meta: FcMeta, *, roster: set[str] | None = None) -> tuple[dict[str, Any], list[tuple[str, bytes]]]:
     history = [m for m in history if _played(m)]
     window = [m for m in window if _played(m)]
     rows = standings(history, window, friends)
@@ -251,10 +256,16 @@ def build_league_report(history: list[dict[str, Any]], window: list[dict[str, An
     files.extend(render_awards(history, window, friends, meta))
     files.append(("records.png", render_records(history, friends, meta)))
 
-    eligible = {o: t for o, t in style_totals(history).items() if o in friends and t["n"] >= STYLE_MIN_GAMES}
-    people = [(r.name, eligible[r.ouid]) for r in rows if r.games and r.ouid in eligible]
+    totals = style_totals(history)
+    people = [(r.name, totals[r.ouid]) for r in rows]
+    played_names = {name for name, _ in people}
+    all_names = roster or {friend.name for friend in friends.values()}
+    people.extend((name, {}) for name in sorted(all_names - played_names))
+    eligible = [t for _, t in people if t.get("n", 0) >= STYLE_MIN_GAMES]
+    calibration = eligible if len(eligible) >= 2 else [t for _, t in people if t.get("n", 0)]
+    scale = [(min((f(t) for t in calibration), default=0), max((f(t) for t in calibration), default=0))
+             for _, _, f in STYLE_METRICS]
     if people:
-        scale = [(min(f(t) for t in eligible.values()), max(f(t) for t in eligible.values())) for _, _, f in STYLE_METRICS]
         files.append(("styles.png", render_styles(people, scale)))
     components = [{"type": 12, "items": [{"media": {"url": f"attachment://{name}"}}]} for name, _ in files]
     return {"flags": 32768, "allowed_mentions": {"users": []},

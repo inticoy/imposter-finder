@@ -193,6 +193,16 @@ class LocalStore:
                 "INSERT OR REPLACE INTO fc_users (nickname, ouid, updated_at) VALUES (?, ?, ?)", (nickname, ouid, _now()))
             self._connection.commit()
 
+    def friend_match_count(self, game: str) -> int:
+        if game == "fconline":
+            query = "SELECT count(*) FROM fc_matches"
+        elif game == "lol":
+            query = "SELECT count(*) FROM lol_matches"
+        else:
+            raise ValueError("unsupported friend-match game")
+        with self._lock:
+            return self._connection.execute(query).fetchone()[0]
+
     def has_fc_matches(self) -> bool:
         with self._lock:
             return self._connection.execute("SELECT 1 FROM fc_matches LIMIT 1").fetchone() is not None

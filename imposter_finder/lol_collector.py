@@ -70,11 +70,13 @@ def run_lol_cycle(settings: Settings, store: LocalStore, notify: bool) -> dict[s
         # 배포 전에 이미 보낸 개별 리포트는 새 5경기 묶음에 넣지 않는다.
         store.mark_notification_done(LEAGUE, store.lol_league_anchor() or LEAGUE_START, "bootstrap")
     matches = []
+    stored_new = 0
     for match_id in group_ids:
         match = store.lol_match(match_id)
         if match is None:
             match = client.match(match_id)
             store.upsert_lol_match(match)
+            stored_new += 1
         matches.append(match)
 
     for match in sorted(matches, key=lambda m: m["info"]["gameCreation"]):
@@ -106,7 +108,8 @@ def run_lol_cycle(settings: Settings, store: LocalStore, notify: bool) -> dict[s
     if not notify:
         store.mark_bootstrap_complete("lol")
     league = _publish_league(settings, store, discord, friends, roster={account.name for account in accounts}) if notify else 0
-    return {"group_matches": len(group_ids), "published": published, "league": league}
+    return {"group_matches": len(group_ids), "published": published, "league": league, "stored_new": stored_new,
+            "stored_total": store.friend_match_count(PLATFORM)}
 
 
 def _publish_league(settings: Settings, store: LocalStore, discord: DiscordClient, friends: dict[str, Friend], *,

@@ -65,11 +65,13 @@ def run_fc_cycle(settings: Settings, store: LocalStore, notify: bool) -> dict[st
 
     friend_matches = [match_id for match_id, ouids in seen_by.items() if len(ouids) >= 2]
     matches: list[dict[str, Any]] = []
+    stored_new = 0
     for match_id in friend_matches:
         match = store.fc_match(match_id)
         if match is None:
             match = client.match_detail(match_id)
             store.upsert_fc_match(match)
+            stored_new += 1
         matches.append(match)
 
     published = 0
@@ -102,10 +104,11 @@ def run_fc_cycle(settings: Settings, store: LocalStore, notify: bool) -> dict[st
                 discord.send_with_files(thread_id, payload, files, report_id=f"{PLATFORM}:{match_id}")
         store.mark_notification_done(PLATFORM, match_id, "sent")
         published += 1
-    league = _publish_league(settings, store, discord, friends) if notify else 0
+    league = _publish_league(settings, store, discord, friends, roster={player.name for player in players}) if notify else 0
     if not notify:
         store.mark_bootstrap_complete("fc")
-    return {"friend_matches": len(friend_matches), "published": published, "league": league}
+    return {"friend_matches": len(friend_matches), "published": published, "league": league, "stored_new": stored_new,
+            "stored_total": store.friend_match_count(PLATFORM)}
 
 
 def _highlight(match: dict[str, Any], friends: dict[str, Friend]) -> tuple[dict, list[tuple]] | None:
@@ -118,7 +121,8 @@ def _highlight(match: dict[str, Any], friends: dict[str, Friend]) -> tuple[dict,
         return None
 
 
-def _publish_league(settings: Settings, store: LocalStore, discord: DiscordClient, friends: dict[str, Friend]) -> int:
+def _publish_league(settings: Settings, store: LocalStore, discord: DiscordClient, friends: dict[str, Friend], *,
+                    roster: set[str] | None = None) -> int:
     """리포트를 보낸 친구전이 LEAGUE_EVERY개 쌓이면 리그 리포트. 처음엔 지금부터 센다."""
     last = store.last_notification(LEAGUE)
     after = (store.fc_match(last) or {}).get("matchDate") if last else None
@@ -139,7 +143,7 @@ def _publish_league(settings: Settings, store: LocalStore, discord: DiscordClien
         endpoint = last_match["matchDate"], last_match["matchId"]
         history = [m for m in all_matches if (m["matchDate"], m["matchId"]) <= endpoint]
         try:
-            payload, files = build_league_report(history, window, friends, meta)
+            payload, files = build_league_report(history, window, friends, meta, roster=roster)
             for thread_id in settings.discord_fc_thread_ids:
                 discord.send_with_files(thread_id, payload, files, report_id=f"{LEAGUE}:{last_match['matchId']}")
             monitoring.observe("fc.league")
