@@ -26,6 +26,19 @@ MAX_AGE_S = 24 * 3600
 _ddragon = DDragon()
 
 
+def _name_report_files(payload: dict, files: list[tuple], report_id: str) -> list[tuple]:
+    """경기 ID를 파일과 Discord 미디어 참조에 함께 붙인다."""
+    names = {name: f"{report_id}-{name}" for name, *_ in files}
+    urls = {f"attachment://{name}": f"attachment://{renamed}" for name, renamed in names.items()}
+    for box in payload.get("components", []):
+        for component in box.get("components", []):
+            if component["type"] == 12:
+                for item in component["items"]:
+                    media = item["media"]
+                    media["url"] = urls.get(media["url"], media["url"])
+    return [(names[name], *content) for name, *content in files]
+
+
 def run_lol_cycle(settings: Settings, store: LocalStore, notify: bool) -> dict[str, int]:
     accounts = load_lol_accounts(settings.players_path)
     if not accounts:
@@ -85,17 +98,19 @@ def run_lol_cycle(settings: Settings, store: LocalStore, notify: bool) -> dict[s
                 print(f"[lol] timeline failed {match_id}: {exc}")
         payload, files = build_report(match, timeline, friends, _ddragon, settings.gemini_api_key, settings.gemini_model)
         payload, files = with_highlight(payload, files, _highlight(match, timeline, friends), before_file="flow.gif")
+        files = _name_report_files(payload, files, match_id)
         for thread_id in settings.discord_lol_thread_ids:
             discord.send_with_files(thread_id, payload, files, report_id=f"{PLATFORM}:{match_id}")
         store.mark_notification_done(PLATFORM, match_id, "sent")
         published += 1
     if not notify:
         store.mark_bootstrap_complete("lol")
-    league = _publish_league(settings, store, discord, friends) if notify else 0
+    league = _publish_league(settings, store, discord, friends, roster={account.name for account in accounts}) if notify else 0
     return {"group_matches": len(group_ids), "published": published, "league": league}
 
 
-def _publish_league(settings: Settings, store: LocalStore, discord: DiscordClient, friends: dict[str, Friend]) -> int:
+def _publish_league(settings: Settings, store: LocalStore, discord: DiscordClient, friends: dict[str, Friend], *,
+                    roster: set[str] | None = None) -> int:
     last = store.last_notification(LEAGUE)
     if not last or not settings.discord_lol_thread_ids:
         return 0
@@ -116,7 +131,8 @@ def _publish_league(settings: Settings, store: LocalStore, discord: DiscordClien
         window = sorted(batch, key=lambda game: (game.created, game.id))
         history = sorted(history + window, key=lambda game: (game.created, game.id))
         try:
-            payload, files = build_league_report(history, window, _ddragon)
+            payload, files = build_league_report(history, window, _ddragon, roster=roster or {friend.name for friend in friends.values()})
+            files = _name_report_files(payload, files, f"{checkpoint}-league")
             for thread_id in settings.discord_lol_thread_ids:
                 destination = f"{LEAGUE}:{thread_id}"
                 if not store.notification_done(destination, checkpoint):

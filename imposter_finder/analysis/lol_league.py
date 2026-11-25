@@ -259,22 +259,26 @@ def _pick(card: Card, x: int, y: int, champion: str, games: list[Game], *, best=
         card.text(x + 321, y + 37, f"{len(games)}판", 24, REPORT_GOLD, anchor="rt")
 
 
-def _picks_card(history: list[Game], window: list[Game], dd: DDragon) -> bytes:
+def _picks_card(history: list[Game], window: list[Game], dd: DDragon, roster: set[str] | None = None) -> bytes:
     recent = Counter(p.name for g in window for p in g.players)
     picks = _participation(history)
-    owners = sorted(recent, key=lambda name: (-recent[name], name))
-    featured = min(picks[owners[0]], key=lambda c: (-len(picks[owners[0]][c]), dd.champion_name(c)))
+    owners = sorted(set(picks) | (roster or set()), key=lambda name: (-recent[name], name))
+    lead = next(name for name in owners if name in picks)
+    featured = min(picks[lead], key=lambda c: (-len(picks[lead][c]), dd.champion_name(c)))
     card = Card("친구별 모스트", "통산 · 최고 승률 5판 이상", 81 + 94 * len(owners), dd,
                 art=featured, accent=REPORT_GOLD)
     for i, name in enumerate(owners):
         row = picks[name]
-        most = min(row, key=lambda c: (-len(row[c]), dd.champion_name(c)))
-        qualified = [c for c in row if len(row[c]) >= BEST_MIN_GAMES]
-        best = min(qualified, key=lambda c: (-_win_rate(row[c]), -len(row[c]), dd.champion_name(c)), default=None)
         y = 76 + i * 94
         card.divider(y - 8)
         card.text(29, y + 23, name, 23, max_width=135)
         card.text(29, y + 52, f"최근 {recent[name]}판", 16, MUTED)
+        if not row:
+            card.text(180, y + 29, "집계된 친구전 없음", 19, MUTED)
+            continue
+        most = min(row, key=lambda c: (-len(row[c]), dd.champion_name(c)))
+        qualified = [c for c in row if len(row[c]) >= BEST_MIN_GAMES]
+        best = min(qualified, key=lambda c: (-_win_rate(row[c]), -len(row[c]), dd.champion_name(c)), default=None)
         same = best == most
         _pick(card, 180, y, most, row[most], same=same and len(qualified) > 1, show_rate=same)
         if same:
@@ -338,9 +342,10 @@ def _records_card(book: list[tuple[Record, str]], count: int, dd: DDragon) -> by
     return png(card.image)
 
 
-def build_league_report(history: list[Game], window: list[Game], dd: DDragon) -> tuple[dict, list[tuple]]:
+def build_league_report(history: list[Game], window: list[Game], dd: DDragon, *,
+                        roster: set[str] | None = None) -> tuple[dict, list[tuple]]:
     files = [("lol-match-summary.png", _match_card(window, dd)),
-             ("lol-most-played.png", _picks_card(history, window, dd)),
+             ("lol-most-played.png", _picks_card(history, window, dd, roster)),
              ("lol-friend-duos.png", _duos_card(history, window, dd))]
     records = _record_book(history, window)
     if records:
